@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: culinary_postgres
+    environment:
+      POSTGRES_DB: culinarybook
+      POSTGRES_USER: culinary_user
+      POSTGRES_PASSWORD: culinary_pass123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U culinary_user -d culinarybook"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: culinary_backend
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: culinary_user
+      DB_PASSWORD: culinary_pass123
+      DB_NAME: culinarybook
+      JWT_SECRET: "development-secret-key-123"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

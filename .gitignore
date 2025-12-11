@@ -1,0 +1,18 @@
+# Go
+backend/go.sum
+client/go.sum
+
+# Environment
+.env
+*.env.local
+
+# Binaries
+backend/main
+client/culinary-client
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.db
