@@ -6,10 +6,16 @@ services:
     container_name: culinary_client
     environment:
       DISPLAY: ${DISPLAY}
-      API_URL: "http://localhost:8080/api"
+      API_URL: "http://localhost:8080/api"  # Для network_mode: host
+      XDG_RUNTIME_DIR: /tmp
+      DBUS_SESSION_BUS_ADDRESS: unix:path=/tmp/dbus-session
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+      - ${HOME}/.Xauthority:/home/user/.Xauthority:rw
+      - /run/user/1000/bus:/tmp/dbus-session:rw  # Для D-Bus
+      - ${HOME}:/home/user/host:rw  # Монтируем домашнюю директорию хоста
+      - ${HOME}/Downloads:/home/user/host/Downloads:rw  # Явно монтируем Downloads
     network_mode: host
     stdin_open: true
     tty: true
+    user: "${UID}:${GID}"  # Используем переменные окружения

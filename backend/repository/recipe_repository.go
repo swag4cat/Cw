@@ -26,8 +26,10 @@ func (r *RecipeRepository) CreateRecipe(recipe *models.Recipe) error {
 	ingredientsJSON, _ := json.Marshal(recipe.Ingredients)
 
 	query := `
-		INSERT INTO recipes (user_id, title, description, ingredients, instructions, cooking_time, difficulty, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO recipes
+		(user_id, title, description, ingredients, instructions,
+		 cooking_time, difficulty, image_base64, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -39,6 +41,7 @@ func (r *RecipeRepository) CreateRecipe(recipe *models.Recipe) error {
 		recipe.Instructions,
 		recipe.CookingTime,
 		recipe.Difficulty,
+		recipe.ImageBase64, // ДОБАВИЛИ
 		time.Now(),
 		time.Now(),
 	).Scan(&recipe.ID, &recipe.CreatedAt, &recipe.UpdatedAt)
@@ -51,7 +54,8 @@ func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, erro
 	ctx := context.Background()
 
 	query := `
-		SELECT id, user_id, title, description, ingredients, instructions, cooking_time, difficulty, created_at, updated_at
+		SELECT id, user_id, title, description, ingredients, instructions,
+		       cooking_time, difficulty, image_base64, created_at, updated_at
 		FROM recipes
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -77,6 +81,7 @@ func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, erro
 			&recipe.Instructions,
 			&recipe.CookingTime,
 			&recipe.Difficulty,
+			&recipe.ImageBase64, // ДОБАВИЛИ
 			&recipe.CreatedAt,
 			&recipe.UpdatedAt,
 		)
@@ -97,7 +102,8 @@ func (r *RecipeRepository) GetRecipeByID(recipeID int) (*models.Recipe, error) {
 	ctx := context.Background()
 
 	query := `
-		SELECT id, user_id, title, description, ingredients, instructions, cooking_time, difficulty, created_at, updated_at
+		SELECT id, user_id, title, description, ingredients, instructions,
+		       cooking_time, difficulty, image_base64, created_at, updated_at
 		FROM recipes
 		WHERE id = $1
 	`
@@ -114,6 +120,7 @@ func (r *RecipeRepository) GetRecipeByID(recipeID int) (*models.Recipe, error) {
 		&recipe.Instructions,
 		&recipe.CookingTime,
 		&recipe.Difficulty,
+		&recipe.ImageBase64, // ДОБАВИЛИ
 		&recipe.CreatedAt,
 		&recipe.UpdatedAt,
 	)
@@ -137,8 +144,9 @@ func (r *RecipeRepository) UpdateRecipe(recipe *models.Recipe) error {
 
 	query := `
 		UPDATE recipes
-		SET title = $1, description = $2, ingredients = $3, instructions = $4, cooking_time = $5, difficulty = $6, updated_at = $7
-		WHERE id = $8 AND user_id = $9
+		SET title = $1, description = $2, ingredients = $3, instructions = $4,
+		    cooking_time = $5, difficulty = $6, image_base64 = $7, updated_at = $8
+		WHERE id = $9 AND user_id = $10
 		RETURNING updated_at
 	`
 
@@ -149,6 +157,7 @@ func (r *RecipeRepository) UpdateRecipe(recipe *models.Recipe) error {
 		recipe.Instructions,
 		recipe.CookingTime,
 		recipe.Difficulty,
+		recipe.ImageBase64, // ДОБАВИЛИ
 		time.Now(),
 		recipe.ID,
 		recipe.UserID,

@@ -359,6 +359,7 @@ func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		Instructions string   `json:"instructions"`
 		CookingTime  int      `json:"cooking_time"`
 		Difficulty   string   `json:"difficulty"`
+		ImageBase64  string   `json:"image_base64"` // ДОБАВИЛИ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&recipeReq); err != nil {
@@ -375,6 +376,7 @@ func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		Instructions: recipeReq.Instructions,
 		CookingTime:  recipeReq.CookingTime,
 		Difficulty:   recipeReq.Difficulty,
+		ImageBase64:  recipeReq.ImageBase64, // ДОБАВИЛИ
 	}
 
 	if err := recipeRepo.CreateRecipe(recipe); err != nil {

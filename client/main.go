@@ -2,20 +2,25 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -36,6 +41,7 @@ type Recipe struct {
 	Instructions string    `json:"instructions"`
 	CookingTime  int       `json:"cooking_time"`
 	Difficulty   string    `json:"difficulty"`
+	ImageBase64  string    `json:"image_base64,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -54,20 +60,22 @@ type RecipesResponse struct {
 	Recipes []Recipe `json:"recipes"`
 }
 
-// Эмодзи символы
+// Эмодзи символы (исправляем проблемные)
 const (
 	iconFood     = "🍳"
-	iconRecipe   = "📝"
-	iconSearch   = "🔍"
-	iconTime     = "⏱"
-	iconCalendar = "📅"
+	iconRecipe   = "📋"
+	iconSearch   = "🔎"
+	iconTime     = "🕐"
+	iconCalendar = "📆"
 	iconUser     = "👤"
 	iconAdd      = "➕"
 	iconDelete   = "🗑"
-	iconClose    = "✕"
-	iconSuccess  = "✓"
-	iconError    = "✗"
+	iconClose    = "❌"
+	iconSuccess  = "✅"
+	iconError    = "❎"
 	iconBullet   = "•"
+	iconRefresh  = "🔄"
+	iconExit     = "🚪"
 )
 
 // Глобальные переменные
@@ -76,7 +84,7 @@ var (
 	myWindow        fyne.Window
 	currentToken    string
 	currentUser     *User
-	recipeList      *widget.List
+	recipeGrid      *fyne.Container
 	recipes         []Recipe
 	filteredRecipes []Recipe
 	statusLabel     *widget.Label
@@ -108,102 +116,84 @@ func initUI() {
 	// Поле поиска
 	searchEntry = widget.NewEntry()
 	searchEntry.SetPlaceHolder(fmt.Sprintf("%s Поиск рецептов...", iconSearch))
-	searchEntry.OnChanged = func(searchText string) {
-		if searchText == "" {
-			filteredRecipes = recipes
-		} else {
-			filteredRecipes = []Recipe{}
-			searchLower := strings.ToLower(searchText)
-			for _, recipe := range recipes {
-				if strings.Contains(strings.ToLower(recipe.Title), searchLower) ||
-					strings.Contains(strings.ToLower(recipe.Description), searchLower) ||
-					containsIngredient(recipe.Ingredients, searchLower) {
-					filteredRecipes = append(filteredRecipes, recipe)
-				}
-			}
-		}
-		recipeList.Refresh()
+
+	// Создаём Grid для карточек
+	recipeGrid = container.NewGridWrap(fyne.NewSize(250, 200))
+}
+
+func truncateText(text string, maxLength int) string {
+	if len(text) <= maxLength {
+		return text
+	}
+	return text[:maxLength] + "..."
+}
+
+// Функция для обновления Grid
+func updateRecipeGrid() {
+	recipeGrid.Objects = nil
+
+	var displayRecipes []Recipe
+	if searchEntry.Text == "" {
+		displayRecipes = recipes
+	} else {
+		displayRecipes = filteredRecipes
 	}
 
-	recipeList = widget.NewList(
-		func() int {
-			if searchEntry.Text == "" {
-				return len(recipes)
-			}
-			return len(filteredRecipes)
-		},
-		func() fyne.CanvasObject {
-			return container.NewVBox(
-				widget.NewLabel("Название"),
-				widget.NewLabel("Описание"),
-			)
-		},
-		func(i widget.ListItemID, o fyne.CanvasObject) {
-			var recipe Recipe
-			if searchEntry.Text == "" {
-				if i < len(recipes) {
-					recipe = recipes[i]
-				} else {
-					return
-				}
-			} else {
-				if i < len(filteredRecipes) {
-					recipe = filteredRecipes[i]
-				} else {
-					return
-				}
-			}
+	for _, recipe := range displayRecipes {
+		recipeGrid.Add(createRecipeCard(recipe))
+	}
+	recipeGrid.Refresh()
+}
 
-			vbox := o.(*fyne.Container)
-			title := vbox.Objects[0].(*widget.Label)
-			desc := vbox.Objects[1].(*widget.Label)
+// Функция создания карточки рецепта
+func createRecipeCard(recipe Recipe) fyne.CanvasObject {
+	// Создаём изображение для карточки
+	var imageResource fyne.Resource
 
-			// Иконка сложности
-			difficultyIcon := "📊"
-			switch recipe.Difficulty {
-			case "легкая":
-				difficultyIcon = "🟢"
-			case "средняя":
-				difficultyIcon = "🟡"
-			case "сложная":
-				difficultyIcon = "🔴"
-			}
+	if recipe.ImageBase64 != "" && len(recipe.ImageBase64) > 100 {
+		// Пробуем декодировать base64
+		imgData, err := base64.StdEncoding.DecodeString(recipe.ImageBase64)
+		if err == nil {
+			imageResource = fyne.NewStaticResource("recipe_"+strconv.Itoa(recipe.ID), imgData)
+		}
+	}
 
-			title.SetText(fmt.Sprintf("%s %s", iconRecipe, recipe.Title))
-			desc.SetText(fmt.Sprintf("%s %d мин | %s %s | %s %s",
-				iconTime,
-				recipe.CookingTime,
-				difficultyIcon,
-				recipe.Difficulty,
-				iconCalendar,
-				recipe.CreatedAt.Format("02.01"),
-			))
-		},
+	// Если нет фото или ошибка декодирования - используем иконку
+	if imageResource == nil {
+		imageResource = theme.FileIcon()
+	}
+
+	// Создаём изображение
+	cardImage := canvas.NewImageFromResource(imageResource)
+	cardImage.FillMode = canvas.ImageFillContain
+	cardImage.SetMinSize(fyne.NewSize(200, 120))
+
+	// Создаём контейнер карточки
+	cardContent := container.NewVBox(
+		cardImage,
+		widget.NewLabelWithStyle(recipe.Title, fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabel(fmt.Sprintf("%s %d мин | %s", iconTime, recipe.CookingTime, recipe.Difficulty)),
+		widget.NewLabel(truncateText(recipe.Description, 60)),
 	)
 
-	recipeList.OnSelected = func(id widget.ListItemID) {
-		var recipe Recipe
-		if searchEntry.Text == "" {
-			if id < len(recipes) {
-				recipe = recipes[id]
-			} else {
-				return
-			}
-		} else {
-			if id < len(filteredRecipes) {
-				recipe = filteredRecipes[id]
-			} else {
-				return
-			}
-		}
+	// Создаём кнопку (вместо карточки)
+	cardButton := widget.NewButton("", func() {
 		showRecipeDetails(recipe)
-		recipeList.Unselect(id)
-	}
+	})
+
+	// Вставляем контент в кнопку
+	cardContainer := container.NewStack(
+		cardButton,
+		cardContent,
+	)
+
+	return cardContainer
 }
 
 func containsIngredient(ingredients []string, search string) bool {
+	searchLower := strings.ToLower(search)
 	for _, ing := range ingredients {
-		if strings.Contains(strings.ToLower(ing), search) {
+		if strings.Contains(strings.ToLower(ing), searchLower) {
 			return true
 		}
 	}
@@ -281,15 +271,34 @@ func showMainWindow() {
 	myWindow.SetTitle(fmt.Sprintf("%s Кулинарная книга - %s %s",
 		iconFood, iconUser, currentUser.Username))
 
-	refreshBtn := widget.NewButton(fmt.Sprintf("%s Обновить", iconSuccess), func() { loadRecipes() })
-	addBtn := widget.NewButton(fmt.Sprintf("%s Добавить рецепт", iconAdd), func() { showAddRecipeForm() })
-	logoutBtn := widget.NewButton(fmt.Sprintf("%s Выйти", iconClose), func() {
+	refreshBtn := widget.NewButton(fmt.Sprintf("%s Обновить", iconRefresh), func() { loadRecipes() })
+	addBtn := widget.NewButton(fmt.Sprintf("%s Добавить рецепт", iconAdd), func() {
+		showAddRecipeFormWithImage()
+	})
+	logoutBtn := widget.NewButton(fmt.Sprintf("%s Выйти", iconExit), func() {
 		currentToken = ""
 		currentUser = nil
 		recipes = []Recipe{}
 		filteredRecipes = []Recipe{}
 		showAuthWindow()
 	})
+
+	searchEntry.OnChanged = func(searchText string) {
+		if searchText == "" {
+			filteredRecipes = recipes
+		} else {
+			filteredRecipes = []Recipe{}
+			searchLower := strings.ToLower(searchText)
+			for _, recipe := range recipes {
+				if strings.Contains(strings.ToLower(recipe.Title), searchLower) ||
+					strings.Contains(strings.ToLower(recipe.Description), searchLower) ||
+					containsIngredient(recipe.Ingredients, searchLower) {
+					filteredRecipes = append(filteredRecipes, recipe)
+				}
+			}
+		}
+		updateRecipeGrid()
+	}
 
 	topPanel := container.NewVBox(
 		container.NewHBox(
@@ -308,12 +317,13 @@ func showMainWindow() {
 		widget.NewSeparator(),
 	)
 
+	// Используем Grid
 	content := container.NewBorder(
 		topPanel,
 		nil,
 		nil,
 		nil,
-		container.NewScroll(recipeList),
+		container.NewScroll(recipeGrid),
 	)
 
 	myWindow.SetContent(content)
@@ -429,7 +439,7 @@ func loadRecipes() {
 	if recipesResp.Status == "ok" {
 		recipes = recipesResp.Recipes
 		filteredRecipes = recipes
-		recipeList.Refresh()
+		updateRecipeGrid()
 		statusLabel.SetText(fmt.Sprintf("%s Статус: %d рецептов загружено",
 			iconSuccess, len(recipes)))
 	} else {
@@ -438,9 +448,9 @@ func loadRecipes() {
 	}
 }
 
-func showAddRecipeForm() {
-	dialogWindow := myApp.NewWindow(fmt.Sprintf("%s Новый рецепт", iconAdd))
-	dialogWindow.Resize(fyne.NewSize(500, 600))
+func showAddRecipeFormWithImage() {
+	dialogWindow := myApp.NewWindow(fmt.Sprintf("%s Новый рецепт с фото", iconAdd))
+	dialogWindow.Resize(fyne.NewSize(500, 700))
 
 	titleEntry := widget.NewEntry()
 	titleEntry.SetPlaceHolder("Название рецепта")
@@ -454,7 +464,7 @@ func showAddRecipeForm() {
 	ingredientsEntry.Wrapping = fyne.TextWrapWord
 
 	instructionsEntry := widget.NewMultiLineEntry()
-	instructionsEntry.SetPlaceHolder("Инструкции по приготовлению")
+	instructionsEntry.SetPlaceHolder("Инструкции по приготовления")
 	instructionsEntry.Wrapping = fyne.TextWrapWord
 
 	timeEntry := widget.NewEntry()
@@ -462,6 +472,98 @@ func showAddRecipeForm() {
 
 	difficultyEntry := widget.NewSelect([]string{"легкая", "средняя", "сложная"}, nil)
 	difficultyEntry.PlaceHolder = "Выберите сложность"
+
+	// Переменная для изображения
+	var imageBase64 string
+
+	// Превью изображения
+	imagePreview := canvas.NewImageFromResource(theme.BrokenImageIcon())
+	imagePreview.SetMinSize(fyne.NewSize(200, 150))
+	imagePreview.FillMode = canvas.ImageFillContain
+
+	// Функция для загрузки и отображения изображения
+	loadAndDisplayImage := func(filePath string) {
+		fmt.Printf("Загружаем изображение из: %s\n", filePath)
+
+		imgBytes, err := os.ReadFile(filePath)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Ошибка чтения файла: %v", err), dialogWindow)
+			return
+		}
+
+		// Проверяем размер (максимум 1MB для простоты)
+		if len(imgBytes) > 1024*1024 {
+			dialog.ShowError(fmt.Errorf("Изображение слишком большое (макс. 1MB)"), dialogWindow)
+			return
+		}
+
+		// Конвертируем в base64
+		imageBase64 = base64.StdEncoding.EncodeToString(imgBytes)
+
+		// Показываем превью
+		previewResource := fyne.NewStaticResource(
+			filepath.Base(filePath),
+			imgBytes,
+		)
+		imagePreview.Resource = previewResource
+		imagePreview.Refresh()
+
+		dialog.ShowInformation("✅", "Фото загружено!", dialogWindow)
+	}
+
+	// Кнопка выбора файла
+	selectImageBtn := widget.NewButton("📁 Выбрать фото", func() {
+		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil || reader == nil {
+				if err != nil {
+					fmt.Printf("Ошибка диалога: %v\n", err)
+				}
+				return
+			}
+			defer reader.Close()
+
+			uri := reader.URI()
+			fmt.Printf("Выбранный URI: %s\n", uri.String())
+
+			// Преобразуем URI в путь файла
+			filePath := ""
+			if uri.Scheme() == "file" {
+				filePath = uri.Path()
+			} else {
+				filePath = strings.TrimPrefix(uri.String(), "file://")
+			}
+
+			if filePath == "" {
+				dialog.ShowError(fmt.Errorf("Не удалось получить путь к файлу"), dialogWindow)
+				return
+			}
+
+			loadAndDisplayImage(filePath)
+		}, dialogWindow)
+
+		// Фильтруем только изображения
+		fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}))
+
+		fileDialog.Resize(fyne.NewSize(600, 400))
+		fileDialog.Show()
+	})
+
+	// Удалить фото
+	removeImageBtn := widget.NewButton("🗑 Удалить фото", func() {
+		imageBase64 = ""
+		imagePreview.Resource = theme.BrokenImageIcon()
+		imagePreview.Refresh()
+		dialog.ShowInformation("✅", "Фото удалено", dialogWindow)
+	})
+
+	imageControls := container.NewVBox(
+		widget.NewLabel("📸 Фото рецепта (опционально):"),
+		container.NewCenter(imagePreview),
+		container.NewHBox(
+			selectImageBtn,
+			removeImageBtn,
+		),
+	)
 
 	form := widget.NewForm(
 		widget.NewFormItem("Название:", titleEntry),
@@ -473,22 +575,24 @@ func showAddRecipeForm() {
 	)
 
 	form.OnSubmit = func() {
+		// Валидация
 		if titleEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("%s Введите название рецепта", iconError), dialogWindow)
+			dialog.ShowError(fmt.Errorf("Введите название рецепта"), dialogWindow)
 			return
 		}
 		if difficultyEntry.Selected == "" {
-			dialog.ShowError(fmt.Errorf("%s Выберите сложность", iconError), dialogWindow)
+			dialog.ShowError(fmt.Errorf("Выберите сложность"), dialogWindow)
 			return
 		}
 
-		createRecipe(
+		createRecipeWithImage(
 			titleEntry.Text,
 			descEntry.Text,
 			parseIngredients(ingredientsEntry.Text),
 			instructionsEntry.Text,
 			timeEntry.Text,
 			difficultyEntry.Selected,
+			imageBase64,
 		)
 		dialogWindow.Close()
 	}
@@ -497,12 +601,14 @@ func showAddRecipeForm() {
 		dialogWindow.Close()
 	}
 
-	form.SubmitText = fmt.Sprintf("%s Сохранить", iconSuccess)
-	form.CancelText = fmt.Sprintf("%s Отмена", iconClose)
+	form.SubmitText = "Сохранить"
+	form.CancelText = "Отмена"
 
 	dialogWindow.SetContent(container.NewVBox(
 		widget.NewLabelWithStyle(fmt.Sprintf("%s Новый рецепт", iconRecipe),
 			fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		imageControls,
+		widget.NewSeparator(),
 		form,
 	))
 
@@ -511,15 +617,17 @@ func showAddRecipeForm() {
 
 func parseIngredients(text string) []string {
 	var ingredients []string
-	for _, line := range strings.Split(text, "\n") {
-		if trimmed := strings.TrimSpace(line); trimmed != "" {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
 			ingredients = append(ingredients, trimmed)
 		}
 	}
 	return ingredients
 }
 
-func createRecipe(title, description string, ingredients []string, instructions, timeStr, difficulty string) {
+func createRecipeWithImage(title, description string, ingredients []string, instructions, timeStr, difficulty, imageBase64 string) {
 	statusLabel.SetText(fmt.Sprintf("%s Статус: Создание рецепта...", iconTime))
 
 	cookingTime := 0
@@ -534,6 +642,7 @@ func createRecipe(title, description string, ingredients []string, instructions,
 		"instructions": instructions,
 		"cooking_time": cookingTime,
 		"difficulty":   difficulty,
+		"image_base64": imageBase64,
 	}
 
 	jsonData, _ := json.Marshal(recipeData)
@@ -565,7 +674,7 @@ func createRecipe(title, description string, ingredients []string, instructions,
 
 func showRecipeDetails(recipe Recipe) {
 	dialogWindow := myApp.NewWindow(fmt.Sprintf("%s %s", iconFood, recipe.Title))
-	dialogWindow.Resize(fyne.NewSize(600, 700))
+	dialogWindow.Resize(fyne.NewSize(650, 800))
 
 	titleLabel := widget.NewLabelWithStyle(fmt.Sprintf("%s %s", iconRecipe, recipe.Title),
 		fyne.TextAlignCenter, fyne.TextStyle{
@@ -573,7 +682,24 @@ func showRecipeDetails(recipe Recipe) {
 			Italic: true,
 		})
 
-	// Иконка сложности
+	// Показываем фото если есть
+	var imageContainer fyne.CanvasObject
+
+	if recipe.ImageBase64 != "" && len(recipe.ImageBase64) > 100 {
+		imgData, err := base64.StdEncoding.DecodeString(recipe.ImageBase64)
+		if err == nil {
+			imageResource := fyne.NewStaticResource("recipe_detail", imgData)
+			recipeImage := canvas.NewImageFromResource(imageResource)
+			recipeImage.FillMode = canvas.ImageFillContain
+			recipeImage.SetMinSize(fyne.NewSize(300, 200))
+			imageContainer = recipeImage
+		}
+	}
+
+	if imageContainer == nil {
+		imageContainer = widget.NewLabel("📷 Фото не загружено")
+	}
+
 	difficultyIcon := "📊"
 	switch recipe.Difficulty {
 	case "легкая":
@@ -628,6 +754,7 @@ func showRecipeDetails(recipe Recipe) {
 
 	content := container.NewVBox(
 		titleLabel,
+		container.NewCenter(imageContainer),
 		infoCard,
 		ingredientsBox,
 		instructionsBox,
