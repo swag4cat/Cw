@@ -6,12 +6,10 @@ services:
     container_name: culinary_client
     environment:
       DISPLAY: ${DISPLAY}
-      API_URL: "http://host.docker.internal:8080/api"
+      API_URL: "http://localhost:8080/api"
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
     network_mode: host
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true

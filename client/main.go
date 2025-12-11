@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -15,7 +16,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -54,18 +54,35 @@ type RecipesResponse struct {
 	Recipes []Recipe `json:"recipes"`
 }
 
-// Глобальные переменные
-var (
-	myApp        fyne.App
-	myWindow     fyne.Window
-	currentToken string
-	currentUser  *User
-	recipeList   *widget.List
-	recipes      []Recipe
-	statusLabel  *widget.Label
+// Эмодзи символы
+const (
+	iconFood     = "🍳"
+	iconRecipe   = "📝"
+	iconSearch   = "🔍"
+	iconTime     = "⏱"
+	iconCalendar = "📅"
+	iconUser     = "👤"
+	iconAdd      = "➕"
+	iconDelete   = "🗑"
+	iconClose    = "✕"
+	iconSuccess  = "✓"
+	iconError    = "✗"
+	iconBullet   = "•"
 )
 
-// Функция для получения URL API
+// Глобальные переменные
+var (
+	myApp           fyne.App
+	myWindow        fyne.Window
+	currentToken    string
+	currentUser     *User
+	recipeList      *widget.List
+	recipes         []Recipe
+	filteredRecipes []Recipe
+	statusLabel     *widget.Label
+	searchEntry     *widget.Entry
+)
+
 func getAPIURL() string {
 	if url := os.Getenv("API_URL"); url != "" {
 		return url
@@ -75,7 +92,7 @@ func getAPIURL() string {
 
 func main() {
 	myApp = app.New()
-	myWindow = myApp.NewWindow("🍳 Кулинарная книга v1.0")
+	myWindow = myApp.NewWindow(fmt.Sprintf("%s Кулинарная книга v1.0", iconFood))
 	myWindow.Resize(fyne.NewSize(900, 700))
 
 	initUI()
@@ -85,77 +102,134 @@ func main() {
 }
 
 func initUI() {
-	statusLabel = widget.NewLabel("Статус: Не авторизован")
+	statusLabel = widget.NewLabel(fmt.Sprintf("%s Статус: Не авторизован", iconTime))
 	statusLabel.TextStyle = fyne.TextStyle{Bold: true}
 
+	// Поле поиска
+	searchEntry = widget.NewEntry()
+	searchEntry.SetPlaceHolder(fmt.Sprintf("%s Поиск рецептов...", iconSearch))
+	searchEntry.OnChanged = func(searchText string) {
+		if searchText == "" {
+			filteredRecipes = recipes
+		} else {
+			filteredRecipes = []Recipe{}
+			searchLower := strings.ToLower(searchText)
+			for _, recipe := range recipes {
+				if strings.Contains(strings.ToLower(recipe.Title), searchLower) ||
+					strings.Contains(strings.ToLower(recipe.Description), searchLower) ||
+					containsIngredient(recipe.Ingredients, searchLower) {
+					filteredRecipes = append(filteredRecipes, recipe)
+				}
+			}
+		}
+		recipeList.Refresh()
+	}
+
 	recipeList = widget.NewList(
-		func() int { return len(recipes) },
+		func() int {
+			if searchEntry.Text == "" {
+				return len(recipes)
+			}
+			return len(filteredRecipes)
+		},
 		func() fyne.CanvasObject {
-			return container.NewBorder(
-				nil,
-				nil,
-				widget.NewIcon(theme.FileIcon()),
-				nil,
-				container.NewVBox(
-					widget.NewLabel("Название"),
-					widget.NewLabel("Описание"),
-				),
+			return container.NewVBox(
+				widget.NewLabel("Название"),
+				widget.NewLabel("Описание"),
 			)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			recipe := recipes[i]
-			cont := o.(*fyne.Container)
-			vbox := cont.Objects[0].(*fyne.Container)
+			var recipe Recipe
+			if searchEntry.Text == "" {
+				if i < len(recipes) {
+					recipe = recipes[i]
+				} else {
+					return
+				}
+			} else {
+				if i < len(filteredRecipes) {
+					recipe = filteredRecipes[i]
+				} else {
+					return
+				}
+			}
+
+			vbox := o.(*fyne.Container)
 			title := vbox.Objects[0].(*widget.Label)
 			desc := vbox.Objects[1].(*widget.Label)
 
-			// Эмодзи для сложности
-			difficultyEmoji := "📊"
+			// Иконка сложности
+			difficultyIcon := "📊"
 			switch recipe.Difficulty {
 			case "легкая":
-				difficultyEmoji = "🟢"
+				difficultyIcon = "🟢"
 			case "средняя":
-				difficultyEmoji = "🟡"
+				difficultyIcon = "🟡"
 			case "сложная":
-				difficultyEmoji = "🔴"
+				difficultyIcon = "🔴"
 			}
 
-			title.SetText("🍴 " + recipe.Title)
-			desc.SetText(fmt.Sprintf("⏱ %d мин | %s %s | 📅 %s",
+			title.SetText(fmt.Sprintf("%s %s", iconRecipe, recipe.Title))
+			desc.SetText(fmt.Sprintf("%s %d мин | %s %s | %s %s",
+				iconTime,
 				recipe.CookingTime,
-				difficultyEmoji,
+				difficultyIcon,
 				recipe.Difficulty,
+				iconCalendar,
 				recipe.CreatedAt.Format("02.01"),
 			))
 		},
 	)
 
 	recipeList.OnSelected = func(id widget.ListItemID) {
-		showRecipeDetails(recipes[id])
+		var recipe Recipe
+		if searchEntry.Text == "" {
+			if id < len(recipes) {
+				recipe = recipes[id]
+			} else {
+				return
+			}
+		} else {
+			if id < len(filteredRecipes) {
+				recipe = filteredRecipes[id]
+			} else {
+				return
+			}
+		}
+		showRecipeDetails(recipe)
 		recipeList.Unselect(id)
 	}
 }
 
+func containsIngredient(ingredients []string, search string) bool {
+	for _, ing := range ingredients {
+		if strings.Contains(strings.ToLower(ing), search) {
+			return true
+		}
+	}
+	return false
+}
+
 func showAuthWindow() {
-	myWindow.SetTitle("🍳 Кулинарная книга - Авторизация")
+	myWindow.SetTitle(fmt.Sprintf("%s Кулинарная книга - Авторизация", iconFood))
 
 	username := widget.NewEntry()
-	username.SetPlaceHolder("Имя пользователя (мин. 3 символа)")
+	username.SetPlaceHolder("Имя пользователя")
 
 	password := widget.NewPasswordEntry()
-	password.SetPlaceHolder("Пароль (мин. 6 символов)")
+	password.SetPlaceHolder("Пароль")
 
 	confirmPassword := widget.NewPasswordEntry()
 	confirmPassword.SetPlaceHolder("Подтвердите пароль")
 
 	loginForm := container.NewVBox(
-		widget.NewLabelWithStyle("Вход в систему", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Вход в систему", iconUser), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		widget.NewSeparator(),
 		username,
 		password,
-		widget.NewButtonWithIcon("Войти", theme.LoginIcon(), func() {
+		widget.NewButton(fmt.Sprintf("%s Войти", iconSuccess), func() {
 			if username.Text == "" || password.Text == "" {
-				dialog.ShowError(fmt.Errorf("Заполните все поля"), myWindow)
+				dialog.ShowError(fmt.Errorf("%s Заполните все поля", iconError), myWindow)
 				return
 			}
 			login(username.Text, password.Text)
@@ -163,22 +237,22 @@ func showAuthWindow() {
 	)
 
 	registerForm := container.NewVBox(
-		widget.NewLabelWithStyle("Регистрация", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Регистрация", iconAdd), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		widget.NewSeparator(),
 		username,
 		password,
 		confirmPassword,
-		widget.NewButtonWithIcon("Зарегистрироваться", theme.ConfirmIcon(), func() {
+		widget.NewButton(fmt.Sprintf("%s Зарегистрироваться", iconAdd), func() {
 			if password.Text != confirmPassword.Text {
-				dialog.ShowError(fmt.Errorf("Пароли не совпадают"), myWindow)
+				dialog.ShowError(fmt.Errorf("%s Пароли не совпадают", iconError), myWindow)
 				return
 			}
 			if len(username.Text) < 3 {
-				dialog.ShowError(fmt.Errorf("Имя пользователя должно быть не менее 3 символов"), myWindow)
+				dialog.ShowError(fmt.Errorf("%s Имя пользователя должно быть не менее 3 символов", iconError), myWindow)
 				return
 			}
 			if len(password.Text) < 6 {
-				dialog.ShowError(fmt.Errorf("Пароль должен быть не менее 6 символов"), myWindow)
+				dialog.ShowError(fmt.Errorf("%s Пароль должен быть не менее 6 символов", iconError), myWindow)
 				return
 			}
 			register(username.Text, password.Text)
@@ -186,12 +260,12 @@ func showAuthWindow() {
 	)
 
 	tabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Вход", theme.LoginIcon(), loginForm),
-		container.NewTabItemWithIcon("Регистрация", theme.ContentAddIcon(), registerForm),
+		container.NewTabItem(fmt.Sprintf("%s Вход", iconUser), loginForm),
+		container.NewTabItem(fmt.Sprintf("%s Регистрация", iconAdd), registerForm),
 	)
 
 	mainContent := container.NewVBox(
-		widget.NewLabelWithStyle("🍳 Кулинарная книга", fyne.TextAlignCenter, fyne.TextStyle{
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Кулинарная книга", iconFood), fyne.TextAlignCenter, fyne.TextStyle{
 			Bold:   true,
 			Italic: true,
 		}),
@@ -204,27 +278,31 @@ func showAuthWindow() {
 }
 
 func showMainWindow() {
-	myWindow.SetTitle(fmt.Sprintf("🍳 Кулинарная книга - %s", currentUser.Username))
+	myWindow.SetTitle(fmt.Sprintf("%s Кулинарная книга - %s %s",
+		iconFood, iconUser, currentUser.Username))
 
-	refreshBtn := widget.NewButtonWithIcon("Обновить", theme.ViewRefreshIcon(), func() { loadRecipes() })
-	addBtn := widget.NewButtonWithIcon("Добавить рецепт", theme.ContentAddIcon(), func() { showAddRecipeForm() })
-	logoutBtn := widget.NewButtonWithIcon("Выйти", theme.LogoutIcon(), func() {
+	refreshBtn := widget.NewButton(fmt.Sprintf("%s Обновить", iconSuccess), func() { loadRecipes() })
+	addBtn := widget.NewButton(fmt.Sprintf("%s Добавить рецепт", iconAdd), func() { showAddRecipeForm() })
+	logoutBtn := widget.NewButton(fmt.Sprintf("%s Выйти", iconClose), func() {
 		currentToken = ""
 		currentUser = nil
 		recipes = []Recipe{}
+		filteredRecipes = []Recipe{}
 		showAuthWindow()
 	})
-
-	userInfo := fmt.Sprintf("👤 %s | 📅 Регистрация: %s",
-		currentUser.Username,
-		currentUser.CreatedAt.Format("02.01.2006"),
-	)
 
 	topPanel := container.NewVBox(
 		container.NewHBox(
 			statusLabel,
 			layout.NewSpacer(),
-			widget.NewLabel(userInfo),
+			widget.NewLabel(fmt.Sprintf("%s %s", iconUser, currentUser.Username)),
+		),
+		container.NewBorder(
+			nil,
+			nil,
+			widget.NewLabel(iconSearch),
+			nil,
+			searchEntry,
 		),
 		container.NewHBox(refreshBtn, addBtn, logoutBtn),
 		widget.NewSeparator(),
@@ -243,7 +321,7 @@ func showMainWindow() {
 }
 
 func login(username, password string) {
-	statusLabel.SetText("Статус: Вход...")
+	statusLabel.SetText(fmt.Sprintf("%s Статус: Вход...", iconTime))
 
 	data, _ := json.Marshal(map[string]string{
 		"username": username,
@@ -252,8 +330,8 @@ func login(username, password string) {
 
 	resp, err := http.Post(getAPIURL()+"/login", "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Ошибка подключения: %v", err), myWindow)
-		statusLabel.SetText("Статус: Ошибка подключения")
+		dialog.ShowError(fmt.Errorf("%s Ошибка подключения: %v", iconError, err), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка подключения", iconError))
 		return
 	}
 	defer resp.Body.Close()
@@ -261,8 +339,8 @@ func login(username, password string) {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		dialog.ShowError(fmt.Errorf("Ошибка авторизации: %s", string(body)), myWindow)
-		statusLabel.SetText("Статус: Ошибка авторизации")
+		dialog.ShowError(fmt.Errorf("%s Ошибка авторизации: %s", iconError, string(body)), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка авторизации", iconError))
 		return
 	}
 
@@ -272,16 +350,16 @@ func login(username, password string) {
 	if authResp.Status == "ok" {
 		currentToken = authResp.Token
 		currentUser = authResp.User
-		statusLabel.SetText("Статус: Авторизован ✓")
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Авторизован", iconSuccess))
 		showMainWindow()
 	} else {
-		dialog.ShowError(fmt.Errorf("Ошибка: %s", authResp.Message), myWindow)
-		statusLabel.SetText("Статус: Ошибка")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, authResp.Message), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 	}
 }
 
 func register(username, password string) {
-	statusLabel.SetText("Статус: Регистрация...")
+	statusLabel.SetText(fmt.Sprintf("%s Статус: Регистрация...", iconTime))
 
 	data, _ := json.Marshal(map[string]string{
 		"username": username,
@@ -290,8 +368,8 @@ func register(username, password string) {
 
 	resp, err := http.Post(getAPIURL()+"/register", "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Ошибка подключения: %v", err), myWindow)
-		statusLabel.SetText("Статус: Ошибка подключения")
+		dialog.ShowError(fmt.Errorf("%s Ошибка подключения: %v", iconError, err), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка подключения", iconError))
 		return
 	}
 	defer resp.Body.Close()
@@ -299,8 +377,8 @@ func register(username, password string) {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		dialog.ShowError(fmt.Errorf("Ошибка регистрации: %s", string(body)), myWindow)
-		statusLabel.SetText("Статус: Ошибка регистрации")
+		dialog.ShowError(fmt.Errorf("%s Ошибка регистрации: %s", iconError, string(body)), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка регистрации", iconError))
 		return
 	}
 
@@ -310,11 +388,11 @@ func register(username, password string) {
 	if authResp.Status == "ok" {
 		currentToken = authResp.Token
 		currentUser = authResp.User
-		statusLabel.SetText("Статус: Авторизован ✓")
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Авторизован", iconSuccess))
 		showMainWindow()
 	} else {
-		dialog.ShowError(fmt.Errorf("Ошибка: %s", authResp.Message), myWindow)
-		statusLabel.SetText("Статус: Ошибка")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, authResp.Message), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 	}
 }
 
@@ -323,7 +401,7 @@ func loadRecipes() {
 		return
 	}
 
-	statusLabel.SetText("Статус: Загрузка рецептов...")
+	statusLabel.SetText(fmt.Sprintf("%s Статус: Загрузка рецептов...", iconTime))
 
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", getAPIURL()+"/my-recipes", nil)
@@ -331,8 +409,8 @@ func loadRecipes() {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Ошибка загрузки: %v", err), myWindow)
-		statusLabel.SetText("Статус: Ошибка загрузки")
+		dialog.ShowError(fmt.Errorf("%s Ошибка загрузки: %v", iconError, err), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка загрузки", iconError))
 		return
 	}
 	defer resp.Body.Close()
@@ -340,8 +418,8 @@ func loadRecipes() {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		dialog.ShowError(fmt.Errorf("Ошибка: %s", string(body)), myWindow)
-		statusLabel.SetText("Статус: Ошибка")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, string(body)), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 		return
 	}
 
@@ -350,16 +428,18 @@ func loadRecipes() {
 
 	if recipesResp.Status == "ok" {
 		recipes = recipesResp.Recipes
+		filteredRecipes = recipes
 		recipeList.Refresh()
-		statusLabel.SetText(fmt.Sprintf("Статус: %d рецептов загружено ✓", len(recipes)))
+		statusLabel.SetText(fmt.Sprintf("%s Статус: %d рецептов загружено",
+			iconSuccess, len(recipes)))
 	} else {
-		dialog.ShowError(fmt.Errorf("Ошибка: %s", recipesResp.Message), myWindow)
-		statusLabel.SetText("Статус: Ошибка")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, recipesResp.Message), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 	}
 }
 
 func showAddRecipeForm() {
-	dialogWindow := myApp.NewWindow("📝 Новый рецепт")
+	dialogWindow := myApp.NewWindow(fmt.Sprintf("%s Новый рецепт", iconAdd))
 	dialogWindow.Resize(fyne.NewSize(500, 600))
 
 	titleEntry := widget.NewEntry()
@@ -393,13 +473,12 @@ func showAddRecipeForm() {
 	)
 
 	form.OnSubmit = func() {
-		// Валидация
 		if titleEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("Введите название рецепта"), dialogWindow)
+			dialog.ShowError(fmt.Errorf("%s Введите название рецепта", iconError), dialogWindow)
 			return
 		}
 		if difficultyEntry.Selected == "" {
-			dialog.ShowError(fmt.Errorf("Выберите сложность"), dialogWindow)
+			dialog.ShowError(fmt.Errorf("%s Выберите сложность", iconError), dialogWindow)
 			return
 		}
 
@@ -418,11 +497,12 @@ func showAddRecipeForm() {
 		dialogWindow.Close()
 	}
 
-	form.SubmitText = "Сохранить"
-	form.CancelText = "Отмена"
+	form.SubmitText = fmt.Sprintf("%s Сохранить", iconSuccess)
+	form.CancelText = fmt.Sprintf("%s Отмена", iconClose)
 
 	dialogWindow.SetContent(container.NewVBox(
-		widget.NewLabelWithStyle("📝 Новый рецепт", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Новый рецепт", iconRecipe),
+			fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		form,
 	))
 
@@ -431,44 +511,16 @@ func showAddRecipeForm() {
 
 func parseIngredients(text string) []string {
 	var ingredients []string
-	lines := splitLines(text)
-	for _, line := range lines {
-		if trimmed := trim(line); trimmed != "" {
+	for _, line := range strings.Split(text, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			ingredients = append(ingredients, trimmed)
 		}
 	}
 	return ingredients
 }
 
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i, c := range s {
-		if c == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
-
-func trim(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
-		end--
-	}
-	return s[start:end]
-}
-
 func createRecipe(title, description string, ingredients []string, instructions, timeStr, difficulty string) {
-	statusLabel.SetText("Статус: Создание рецепта...")
+	statusLabel.SetText(fmt.Sprintf("%s Статус: Создание рецепта...", iconTime))
 
 	cookingTime := 0
 	if n, err := strconv.Atoi(timeStr); err == nil {
@@ -493,8 +545,8 @@ func createRecipe(title, description string, ingredients []string, instructions,
 
 	resp, err := client.Do(req)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Ошибка: %v", err), myWindow)
-		statusLabel.SetText("Статус: Ошибка создания")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %v", iconError, err), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка создания", iconError))
 		return
 	}
 	defer resp.Body.Close()
@@ -502,83 +554,75 @@ func createRecipe(title, description string, ingredients []string, instructions,
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == 200 {
-		dialog.ShowInformation("✅ Успех", "Рецепт успешно создан!", myWindow)
+		dialog.ShowInformation(fmt.Sprintf("%s Успех", iconSuccess),
+			"Рецепт успешно создан!", myWindow)
 		loadRecipes()
 	} else {
-		dialog.ShowError(fmt.Errorf("Ошибка: %s", string(body)), myWindow)
-		statusLabel.SetText("Статус: Ошибка")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, string(body)), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 	}
 }
 
 func showRecipeDetails(recipe Recipe) {
-	dialogWindow := myApp.NewWindow(fmt.Sprintf("🍳 %s", recipe.Title))
+	dialogWindow := myApp.NewWindow(fmt.Sprintf("%s %s", iconFood, recipe.Title))
 	dialogWindow.Resize(fyne.NewSize(600, 700))
 
-	titleLabel := widget.NewLabelWithStyle(recipe.Title, fyne.TextAlignCenter, fyne.TextStyle{
-		Bold:   true,
-		Italic: true,
-	})
-	// TextSize не поддерживается в этой версии Fyne, убираем
+	titleLabel := widget.NewLabelWithStyle(fmt.Sprintf("%s %s", iconRecipe, recipe.Title),
+		fyne.TextAlignCenter, fyne.TextStyle{
+			Bold:   true,
+			Italic: true,
+		})
 
-	difficultyEmoji := "📊"
+	// Иконка сложности
+	difficultyIcon := "📊"
 	switch recipe.Difficulty {
 	case "легкая":
-		difficultyEmoji = "🟢"
+		difficultyIcon = "🟢"
 	case "средняя":
-		difficultyEmoji = "🟡"
+		difficultyIcon = "🟡"
 	case "сложная":
-		difficultyEmoji = "🔴"
+		difficultyIcon = "🔴"
 	}
 
 	infoCard := container.NewVBox(
-		widget.NewLabelWithStyle("📋 Информация о рецепте", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Информация о рецепте", iconFood),
+			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		widget.NewSeparator(),
-		container.NewHBox(
-			widget.NewIcon(theme.InfoIcon()), // Заменили FileTimeIcon на InfoIcon
-			widget.NewLabel(fmt.Sprintf("⏱ Время: %d минут", recipe.CookingTime)),
-			layout.NewSpacer(),
-			widget.NewIcon(theme.InfoIcon()),
-			widget.NewLabel(fmt.Sprintf("%s Сложность: %s", difficultyEmoji, recipe.Difficulty)),
-		),
-		container.NewHBox(
-			widget.NewIcon(theme.InfoIcon()), // Заменили CalendarIcon на InfoIcon
-			widget.NewLabel(fmt.Sprintf("📅 Добавлен: %s", recipe.CreatedAt.Format("02.01.2006 15:04"))),
-		),
+		widget.NewLabel(fmt.Sprintf("%s Время приготовления: %d минут", iconTime, recipe.CookingTime)),
+		widget.NewLabel(fmt.Sprintf("%s Сложность: %s %s", difficultyIcon, recipe.Difficulty, difficultyIcon)),
+		widget.NewLabel(fmt.Sprintf("%s Добавлен: %s", iconCalendar, recipe.CreatedAt.Format("02.01.2006 15:04"))),
 	)
 
 	ingredientsBox := container.NewVBox(
-		widget.NewLabelWithStyle("🛒 Ингредиенты", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Ингредиенты", iconAdd),
+			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		widget.NewSeparator(),
 	)
 	for _, ing := range recipe.Ingredients {
-		ingredientsBox.Add(container.NewHBox(
-			widget.NewIcon(theme.DocumentCreateIcon()),
-			widget.NewLabel(fmt.Sprintf("  %s", ing)),
-		))
+		ingredientsBox.Add(widget.NewLabel(fmt.Sprintf("%s %s", iconBullet, ing)))
 	}
 
 	instructionsBox := container.NewVBox(
-		widget.NewLabelWithStyle("👨‍🍳 Приготовление", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(fmt.Sprintf("%s Приготовление", iconFood),
+			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		widget.NewSeparator(),
 		widget.NewLabel(recipe.Instructions),
 	)
 
-	deleteBtn := widget.NewButtonWithIcon("Удалить", theme.DeleteIcon(), func() {
-		confirmDialog := dialog.NewConfirm("🗑 Удаление рецепта",
-			fmt.Sprintf("Вы уверены, что хотите удалить рецепт \"%s\"?\nЭто действие нельзя отменить.", recipe.Title),
+	deleteBtn := widget.NewButton(fmt.Sprintf("%s Удалить", iconDelete), func() {
+		confirmDialog := dialog.NewConfirm(fmt.Sprintf("%s Удаление рецепта", iconDelete),
+			fmt.Sprintf("Вы уверены, что хотите удалить рецепт \"%s\"?\n%s Это действие нельзя отменить.",
+				recipe.Title, iconError),
 			func(confirmed bool) {
 				if confirmed {
 					deleteRecipe(recipe.ID)
 					dialogWindow.Close()
 				}
 			}, dialogWindow)
-		confirmDialog.SetDismissText("Отмена")
-		confirmDialog.SetConfirmText("Удалить")
 		confirmDialog.Show()
 	})
-	deleteBtn.Importance = widget.DangerImportance
 
-	closeBtn := widget.NewButtonWithIcon("Закрыть", theme.CancelIcon(), func() {
+	closeBtn := widget.NewButton(fmt.Sprintf("%s Закрыть", iconClose), func() {
 		dialogWindow.Close()
 	})
 
@@ -601,7 +645,7 @@ func showRecipeDetails(recipe Recipe) {
 }
 
 func deleteRecipe(recipeID int) {
-	statusLabel.SetText("Статус: Удаление рецепта...")
+	statusLabel.SetText(fmt.Sprintf("%s Статус: Удаление рецепта...", iconTime))
 
 	client := &http.Client{}
 	req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/delete-recipe?id=%d", getAPIURL(), recipeID), nil)
@@ -609,18 +653,19 @@ func deleteRecipe(recipeID int) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Ошибка удаления: %v", err), myWindow)
-		statusLabel.SetText("Статус: Ошибка удаления")
+		dialog.ShowError(fmt.Errorf("%s Ошибка удаления: %v", iconError, err), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка удаления", iconError))
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		dialog.ShowInformation("✅ Успех", "Рецепт успешно удален!", myWindow)
+		dialog.ShowInformation(fmt.Sprintf("%s Успех", iconSuccess),
+			"Рецепт успешно удален!", myWindow)
 		loadRecipes()
 	} else {
 		body, _ := io.ReadAll(resp.Body)
-		dialog.ShowError(fmt.Errorf("Ошибка: %s", string(body)), myWindow)
-		statusLabel.SetText("Статус: Ошибка")
+		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, string(body)), myWindow)
+		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 	}
 }
