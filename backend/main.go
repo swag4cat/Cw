@@ -395,17 +395,79 @@ func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateRecipeHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "PUT" {
-		http.Error(w, `{"error": "Метод не разрешен"}`, http.StatusMethodNotAllowed)
-		return
-	}
+    if r.Method != "PUT" {
+        http.Error(w, `{"error": "Метод не разрешен"}`, http.StatusMethodNotAllowed)
+        return
+    }
 
-	// TODO: Реализовать обновление рецепта
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "ok",
-		"message": "API обновления рецепта (заглушка)",
-	})
+    // Получаем user_id из токена
+    authHeader := r.Header.Get("Authorization")
+    if authHeader == "" {
+        http.Error(w, `{"error": "Требуется авторизация"}`, http.StatusUnauthorized)
+        return
+    }
+
+    tokenString := strings.Split(authHeader, " ")[1]
+    userID, err := auth.GetUserIDFromToken(tokenString)
+    if err != nil {
+        http.Error(w, `{"error": "Невалидный токен"}`, http.StatusUnauthorized)
+        return
+    }
+
+    var recipeReq struct {
+        ID           int      `json:"id"`
+        Title        string   `json:"title"`
+        Description  string   `json:"description"`
+        Ingredients  []string `json:"ingredients"`
+        Instructions string   `json:"instructions"`
+        CookingTime  int      `json:"cooking_time"`
+        Difficulty   string   `json:"difficulty"`
+        ImageBase64  string   `json:"image_base64"`
+    }
+
+    if err := json.NewDecoder(r.Body).Decode(&recipeReq); err != nil {
+        http.Error(w, `{"error": "Неверный формат данных"}`, http.StatusBadRequest)
+        return
+    }
+
+    // Проверяем, что ID указан
+    if recipeReq.ID == 0 {
+        http.Error(w, `{"error": "ID рецепта не указан"}`, http.StatusBadRequest)
+        return
+    }
+
+    // Создаём объект рецепта для обновления
+    recipe := &models.Recipe{
+        ID:           recipeReq.ID,
+        UserID:       userID,
+        Title:        recipeReq.Title,
+        Description:  recipeReq.Description,
+        Ingredients:  recipeReq.Ingredients,
+        Instructions: recipeReq.Instructions,
+        CookingTime:  recipeReq.CookingTime,
+        Difficulty:   recipeReq.Difficulty,
+        ImageBase64:  recipeReq.ImageBase64,
+    }
+
+    // Обновляем рецепт
+    if err := recipeRepo.UpdateRecipe(recipe); err != nil {
+        // Проверяем, возможно рецепт не найден или принадлежит другому пользователю
+        if strings.Contains(err.Error(), "no rows") {
+            http.Error(w, `{"error": "Рецепт не найден или нет прав на редактирование"}`, http.StatusNotFound)
+            return
+        }
+        http.Error(w, `{"error": "Ошибка при обновлении рецепта: `+err.Error()+`"}`, http.StatusInternalServerError)
+        return
+    }
+
+    response := map[string]interface{}{
+        "status":  "ok",
+        "message": "Рецепт успешно обновлен",
+        "recipe":  recipe,
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(response)
 }
 
 func deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {

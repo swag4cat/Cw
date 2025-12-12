@@ -5,17 +5,20 @@ services:
       dockerfile: docker/Dockerfile.client
     container_name: culinary_client
     environment:
-      DISPLAY: ${DISPLAY}
-      API_URL: "http://localhost:8080/api"  # Для network_mode: host
+      DISPLAY: ${DISPLAY}  # Должно быть :0 или :1 внутри VirtualBox
+      API_URL: "http://localhost:8080/api"  # Верно для network_mode: host
       XDG_RUNTIME_DIR: /tmp
-      DBUS_SESSION_BUS_ADDRESS: unix:path=/tmp/dbus-session
+      # Указываем правильный путь к монтируемому D-Bus сокету
+      DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/1000/bus
+    security_opt:
+      - "apparmor=unconfined"  # КРИТИЧНО: отключаем политику AppArmor для контейнера
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.Xauthority:/home/user/.Xauthority:rw
-      - /run/user/1000/bus:/tmp/dbus-session:rw  # Для D-Bus
-      - ${HOME}:/home/user/host:rw  # Монтируем домашнюю директорию хоста
-      - ${HOME}/Downloads:/home/user/host/Downloads:rw  # Явно монтируем Downloads
-    network_mode: host
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # Сокет X11 для GUI
+      - ${HOME}/.Xauthority:/home/user/.Xauthority:rw  # Права на доступ к X11
+      - /run/user/1000/bus:/run/user/1000/bus:rw  # Сокет пользовательской сессии D-Bus
+      - ${HOME}:/home/user/host:rw  # Домашняя директория для выбора файлов
+      - ${HOME}/Downloads:/home/user/host/Downloads:rw  # Папка Downloads
+    network_mode: host  # Используем сеть хоста
     stdin_open: true
     tty: true
-    user: "${UID}:${GID}"  # Используем переменные окружения
+    # УДАЛИТЬ СТРОКУ: user: "${UID}:${GID}"
