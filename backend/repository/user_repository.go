@@ -18,7 +18,6 @@ func NewUserRepository(db *pgx.Conn) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// CreateUser создаёт нового пользователя
 func (r *UserRepository) CreateUser(user *models.User) error {
 	ctx := context.Background()
 
@@ -38,7 +37,6 @@ func (r *UserRepository) CreateUser(user *models.User) error {
 	return err
 }
 
-// GetUserByUsername получает пользователя по имени
 func (r *UserRepository) GetUserByUsername(username string) (*models.User, error) {
 	ctx := context.Background()
 
@@ -67,7 +65,6 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 	return &user, nil
 }
 
-// GetUserByID получает пользователя по ID
 func (r *UserRepository) GetUserByID(userID int) (*models.User, error) {
 	ctx := context.Background()
 
@@ -95,7 +92,6 @@ func (r *UserRepository) GetUserByID(userID int) (*models.User, error) {
 	return &user, nil
 }
 
-// UsernameExists проверяет, существует ли username
 func (r *UserRepository) UsernameExists(username string) (bool, error) {
 	ctx := context.Background()
 

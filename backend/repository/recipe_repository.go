@@ -19,7 +19,6 @@ func NewRecipeRepository(db *pgx.Conn) *RecipeRepository {
 	return &RecipeRepository{db: db}
 }
 
-// CreateRecipe создаёт новый рецепт
 func (r *RecipeRepository) CreateRecipe(recipe *models.Recipe) error {
 	ctx := context.Background()
 
@@ -41,7 +40,7 @@ func (r *RecipeRepository) CreateRecipe(recipe *models.Recipe) error {
 		recipe.Instructions,
 		recipe.CookingTime,
 		recipe.Difficulty,
-		recipe.ImageBase64, // ДОБАВИЛИ
+		recipe.ImageBase64,
 		time.Now(),
 		time.Now(),
 	).Scan(&recipe.ID, &recipe.CreatedAt, &recipe.UpdatedAt)
@@ -49,18 +48,15 @@ func (r *RecipeRepository) CreateRecipe(recipe *models.Recipe) error {
 	return err
 }
 
-// GetRecipesByUserID получает рецепты пользователя
 func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, error) {
 	ctx := context.Background()
 
-	// Сначала получаем избранные рецепты пользователя
 	favoriteRepo := NewFavoriteRepository(r.db)
 	favoriteIDs, err := favoriteRepo.GetFavoriteRecipes(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Создаём map для быстрой проверки
 	favoriteMap := make(map[int]bool)
 	for _, id := range favoriteIDs {
 		favoriteMap[id] = true
@@ -105,7 +101,6 @@ func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, erro
 
 		json.Unmarshal(ingredientsJSON, &recipe.Ingredients)
 
-		// Устанавливаем флаг избранного
 		recipe.IsFavorite = favoriteMap[recipe.ID]
 
 		recipes = append(recipes, recipe)
@@ -114,7 +109,6 @@ func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, erro
 	return recipes, nil
 }
 
-// GetRecipeByID получает рецепт по ID
 func (r *RecipeRepository) GetRecipeByID(recipeID int) (*models.Recipe, error) {
 	ctx := context.Background()
 
@@ -137,7 +131,7 @@ func (r *RecipeRepository) GetRecipeByID(recipeID int) (*models.Recipe, error) {
 		&recipe.Instructions,
 		&recipe.CookingTime,
 		&recipe.Difficulty,
-		&recipe.ImageBase64, // ДОБАВИЛИ
+		&recipe.ImageBase64,
 		&recipe.CreatedAt,
 		&recipe.UpdatedAt,
 	)
@@ -153,7 +147,6 @@ func (r *RecipeRepository) GetRecipeByID(recipeID int) (*models.Recipe, error) {
 	return &recipe, nil
 }
 
-// UpdateRecipe обновляет рецепт
 func (r *RecipeRepository) UpdateRecipe(recipe *models.Recipe) error {
 	ctx := context.Background()
 
@@ -174,7 +167,7 @@ func (r *RecipeRepository) UpdateRecipe(recipe *models.Recipe) error {
 		recipe.Instructions,
 		recipe.CookingTime,
 		recipe.Difficulty,
-		recipe.ImageBase64, // ДОБАВИЛИ
+		recipe.ImageBase64,
 		time.Now(),
 		recipe.ID,
 		recipe.UserID,
@@ -183,7 +176,6 @@ func (r *RecipeRepository) UpdateRecipe(recipe *models.Recipe) error {
 	return err
 }
 
-// DeleteRecipe удаляет рецепт
 func (r *RecipeRepository) DeleteRecipe(recipeID, userID int) error {
 	ctx := context.Background()
 

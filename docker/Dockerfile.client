@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y \
     dbus-x11 \
     && rm -rf /var/lib/apt/lists/*
 
-# Создаем пользователя с таким же UID как у хоста
 ARG UID=1000
 ARG GID=1000
 RUN groupadd -g $GID user && \
@@ -32,7 +31,6 @@ RUN groupadd -g $GID user && \
 WORKDIR /home/user
 COPY --from=builder /app/culinary-client .
 
-# Устанавливаем D-Bus для контейнера
 RUN mkdir -p /run/dbus && \
     dbus-daemon --system --fork
 

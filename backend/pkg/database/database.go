@@ -36,7 +36,6 @@ func InitDB() (*pgxpool.Pool, error) {
 		return nil, err
 	}
 
-	// Проверка подключения
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

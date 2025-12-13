@@ -42,12 +42,10 @@ func initDB() error {
 		return fmt.Errorf("не удалось подключиться к БД: %w", err)
 	}
 
-	// Проверяем подключение
 	if err := db.Ping(ctx); err != nil {
 		return fmt.Errorf("не удалось проверить подключение к БД: %w", err)
 	}
 
-	// Инициализируем репозитории
 	userRepo = repository.NewUserRepository(db)
 	recipeRepo = repository.NewRecipeRepository(db)
 	favoriteRepo = repository.NewFavoriteRepository(db)
@@ -59,7 +57,6 @@ func initDB() error {
 func createTables() error {
 	ctx := context.Background()
 
-	// Создаём таблицу пользователей (если не существует)
 	_, err := db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS users (
 			id SERIAL PRIMARY KEY,
@@ -73,7 +70,6 @@ func createTables() error {
 		return err
 	}
 
-	// Создаём таблицу рецептов (если не существует)
 	_, err = db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS recipes (
 			id SERIAL PRIMARY KEY,
@@ -92,7 +88,6 @@ func createTables() error {
 		return err
 	}
 
-	// Создаём индекс
 	_, err = db.Exec(ctx, `
 		CREATE INDEX IF NOT EXISTS idx_recipes_user_id ON recipes(user_id)
 	`)
@@ -104,7 +99,6 @@ func createTables() error {
 	return nil
 }
 
-// Middleware для проверки JWT
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -113,7 +107,6 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Проверяем формат "Bearer {token}"
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			http.Error(w, `{"error": "Неверный формат токена"}`, http.StatusUnauthorized)
@@ -137,7 +130,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Новая структура без email
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -148,7 +140,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Валидация
 	if len(req.Username) < 3 {
 		http.Error(w, `{"error": "Имя пользователя должно быть не менее 3 символов"}`, http.StatusBadRequest)
 		return
@@ -158,7 +149,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем, существует ли пользователь
 	exists, err := userRepo.UsernameExists(req.Username)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка сервера"}`, http.StatusInternalServerError)
@@ -169,18 +159,15 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Хэшируем пароль
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка при обработке пароля"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Создаём пользователя БЕЗ email
 	user := &models.User{
 		Username:     req.Username,
 		PasswordHash: passwordHash,
-		// Email не указываем
 	}
 
 	if err := userRepo.CreateUser(user); err != nil {
@@ -188,7 +175,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Генерируем JWT токен
 	token, err := auth.GenerateJWT(user.ID, user.Username)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка при создании токена"}`, http.StatusInternalServerError)
@@ -218,20 +204,17 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем пользователя
 	user, err := userRepo.GetUserByUsername(req.Username)
 	if err != nil {
 		http.Error(w, `{"error": "Неверное имя пользователя или пароль"}`, http.StatusUnauthorized)
 		return
 	}
 
-	// Проверяем пароль
 	if !auth.CheckPassword(req.Password, user.PasswordHash) {
 		http.Error(w, `{"error": "Неверное имя пользователя или пароль"}`, http.StatusUnauthorized)
 		return
 	}
 
-	// Генерируем JWT токен
 	token, err := auth.GenerateJWT(user.ID, user.Username)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка при создании токена"}`, http.StatusInternalServerError)
@@ -252,7 +235,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 func recipesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Пока возвращаем тестовые данные
 	response := map[string]interface{}{
 		"status":  "ok",
 		"message": "API рецептов работает. Используйте /api/my-recipes для получения своих рецептов",
@@ -260,7 +242,7 @@ func recipesHandler(w http.ResponseWriter, r *http.Request) {
 			{
 				"id":          1,
 				"title":       "Борщ",
-				"description": "Традиционный украинский суп",
+				"description": "Традиционный суп",
 				"difficulty":  "medium",
 				"time":        90,
 			},
@@ -280,7 +262,6 @@ func recipesHandler(w http.ResponseWriter, r *http.Request) {
 func myRecipesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Получаем user_id из токена
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		http.Error(w, `{"error": "Требуется авторизация"}`, http.StatusUnauthorized)
@@ -294,7 +275,6 @@ func myRecipesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем рецепты пользователя
 	recipes, err := recipeRepo.GetRecipesByUserID(userID)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка при получении рецептов"}`, http.StatusInternalServerError)
@@ -313,7 +293,6 @@ func myRecipesHandler(w http.ResponseWriter, r *http.Request) {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Проверяем подключение к БД
 	ctx := context.Background()
 	var dbStatus string
 	if err := db.Ping(ctx); err != nil {
@@ -333,14 +312,12 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// Добавить после других обработчиков
 func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, `{"error": "Метод не разрешен"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Получаем user_id из токена
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		http.Error(w, `{"error": "Требуется авторизация"}`, http.StatusUnauthorized)
@@ -361,7 +338,7 @@ func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		Instructions string   `json:"instructions"`
 		CookingTime  int      `json:"cooking_time"`
 		Difficulty   string   `json:"difficulty"`
-		ImageBase64  string   `json:"image_base64"` // ДОБАВИЛИ
+		ImageBase64  string   `json:"image_base64"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&recipeReq); err != nil {
@@ -369,7 +346,6 @@ func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаём рецепт
 	recipe := &models.Recipe{
 		UserID:       userID,
 		Title:        recipeReq.Title,
@@ -378,7 +354,7 @@ func createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		Instructions: recipeReq.Instructions,
 		CookingTime:  recipeReq.CookingTime,
 		Difficulty:   recipeReq.Difficulty,
-		ImageBase64:  recipeReq.ImageBase64, // ДОБАВИЛИ
+		ImageBase64:  recipeReq.ImageBase64,
 	}
 
 	if err := recipeRepo.CreateRecipe(recipe); err != nil {
@@ -402,7 +378,6 @@ func updateRecipeHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Получаем user_id из токена
     authHeader := r.Header.Get("Authorization")
     if authHeader == "" {
         http.Error(w, `{"error": "Требуется авторизация"}`, http.StatusUnauthorized)
@@ -432,13 +407,11 @@ func updateRecipeHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Проверяем, что ID указан
     if recipeReq.ID == 0 {
         http.Error(w, `{"error": "ID рецепта не указан"}`, http.StatusBadRequest)
         return
     }
 
-    // Создаём объект рецепта для обновления
     recipe := &models.Recipe{
         ID:           recipeReq.ID,
         UserID:       userID,
@@ -451,9 +424,7 @@ func updateRecipeHandler(w http.ResponseWriter, r *http.Request) {
         ImageBase64:  recipeReq.ImageBase64,
     }
 
-    // Обновляем рецепт
     if err := recipeRepo.UpdateRecipe(recipe); err != nil {
-        // Проверяем, возможно рецепт не найден или принадлежит другому пользователю
         if strings.Contains(err.Error(), "no rows") {
             http.Error(w, `{"error": "Рецепт не найден или нет прав на редактирование"}`, http.StatusNotFound)
             return
@@ -478,7 +449,6 @@ func deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем user_id из токена
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		http.Error(w, `{"error": "Требуется авторизация"}`, http.StatusUnauthorized)
@@ -492,7 +462,6 @@ func deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем ID рецепта из query параметра
 	recipeIDStr := r.URL.Query().Get("id")
 	if recipeIDStr == "" {
 		http.Error(w, `{"error": "ID рецепта не указан"}`, http.StatusBadRequest)
@@ -505,7 +474,6 @@ func deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Удаляем рецепт
 	if err := recipeRepo.DeleteRecipe(recipeID, userID); err != nil {
 		http.Error(w, `{"error": "Ошибка при удалении рецепта: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -526,7 +494,6 @@ func favoritesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем user_id из токена
 	authHeader := r.Header.Get("Authorization")
 	tokenString := strings.Split(authHeader, " ")[1]
 	userID, err := auth.GetUserIDFromToken(tokenString)
@@ -535,19 +502,17 @@ func favoritesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем ID избранных рецептов
 	favoriteIDs, err := favoriteRepo.GetFavoriteRecipes(userID)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка при получении избранного"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Получаем сами рецепты
 	var favoriteRecipes []models.Recipe
 	for _, recipeID := range favoriteIDs {
 		recipe, err := recipeRepo.GetRecipeByID(recipeID)
 		if err == nil {
-			recipe.IsFavorite = true // Помечаем как избранное
+			recipe.IsFavorite = true
 			favoriteRecipes = append(favoriteRecipes, *recipe)
 		}
 	}
@@ -568,7 +533,6 @@ func addFavoriteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем user_id из токена
 	authHeader := r.Header.Get("Authorization")
 	tokenString := strings.Split(authHeader, " ")[1]
 	userID, err := auth.GetUserIDFromToken(tokenString)
@@ -586,14 +550,12 @@ func addFavoriteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем, существует ли рецепт
 	_, err = recipeRepo.GetRecipeByID(req.RecipeID)
 	if err != nil {
 		http.Error(w, `{"error": "Рецепт не найден"}`, http.StatusNotFound)
 		return
 	}
 
-	// Добавляем в избранное
 	if err := favoriteRepo.AddFavorite(userID, req.RecipeID); err != nil {
 		http.Error(w, `{"error": "Ошибка при добавлении в избранное"}`, http.StatusInternalServerError)
 		return
@@ -614,7 +576,6 @@ func removeFavoriteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем user_id из токена
 	authHeader := r.Header.Get("Authorization")
 	tokenString := strings.Split(authHeader, " ")[1]
 	userID, err := auth.GetUserIDFromToken(tokenString)
@@ -635,7 +596,6 @@ func removeFavoriteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Удаляем из избранного
 	if err := favoriteRepo.RemoveFavorite(userID, recipeID); err != nil {
 		http.Error(w, `{"error": "Ошибка при удалении из избранного"}`, http.StatusInternalServerError)
 		return
@@ -651,25 +611,21 @@ func removeFavoriteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// Настройка логов
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	log.Println("🚀 Запуск сервера кулинарной книги...")
 
-	// Инициализация БД
 	if err := initDB(); err != nil {
 		log.Printf("⚠️  Предупреждение: %v", err)
 		log.Println("⚠️  Сервер запустится без базы данных")
 	} else {
 		defer db.Close(context.Background())
 
-		// Создание таблиц
 		if err := createTables(); err != nil {
 			log.Printf("⚠️  Не удалось создать таблицы: %v", err)
 		}
 	}
 
-	// Настройка маршрутов
 	http.HandleFunc("/api/health", healthHandler)
 	http.HandleFunc("/api/register", registerHandler)
 	http.HandleFunc("/api/login", loginHandler)
@@ -682,7 +638,6 @@ func main() {
 	http.HandleFunc("/api/favorites/add", authMiddleware(addFavoriteHandler))
 	http.HandleFunc("/api/favorites/remove", authMiddleware(removeFavoriteHandler))
 
-	// Корневой маршрут
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -702,7 +657,6 @@ func main() {
 		})
 	})
 
-	// Запуск сервера
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

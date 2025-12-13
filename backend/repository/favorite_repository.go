@@ -16,7 +16,6 @@ func NewFavoriteRepository(db *pgx.Conn) *FavoriteRepository {
 	return &FavoriteRepository{db: db}
 }
 
-// AddFavorite добавляет рецепт в избранное
 func (r *FavoriteRepository) AddFavorite(userID, recipeID int) error {
 	ctx := context.Background()
 
@@ -30,7 +29,6 @@ func (r *FavoriteRepository) AddFavorite(userID, recipeID int) error {
 	return err
 }
 
-// RemoveFavorite удаляет рецепт из избранного
 func (r *FavoriteRepository) RemoveFavorite(userID, recipeID int) error {
 	ctx := context.Background()
 
@@ -51,7 +49,6 @@ func (r *FavoriteRepository) RemoveFavorite(userID, recipeID int) error {
 	return nil
 }
 
-// GetFavoriteRecipes получает ID избранных рецептов пользователя
 func (r *FavoriteRepository) GetFavoriteRecipes(userID int) ([]int, error) {
 	ctx := context.Background()
 
@@ -79,7 +76,6 @@ func (r *FavoriteRepository) GetFavoriteRecipes(userID int) ([]int, error) {
 	return recipeIDs, nil
 }
 
-// IsFavorite проверяет, есть ли рецепт в избранном
 func (r *FavoriteRepository) IsFavorite(userID, recipeID int) (bool, error) {
 	ctx := context.Background()
 

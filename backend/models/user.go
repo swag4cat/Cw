@@ -8,14 +8,13 @@ type User struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
-	Email        string    `json:"email,omitempty"` // Оставляем, но не используем в регистрации
+	Email        string    `json:"email,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=50"`
 	Password string `json:"password" binding:"required,min=6"`
-	// Email убрали из регистрации
 }
 
 type LoginRequest struct {

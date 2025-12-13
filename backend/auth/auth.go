@@ -8,26 +8,23 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("your-secret-key-change-in-production") // В продакшене брать из переменных окружения
+var jwtSecret = []byte("your-secret-key-change-in-production")
 
-// HashPassword хэширует пароль
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(bytes), err
 }
 
-// CheckPassword проверяет пароль
 func CheckPassword(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
 
-// GenerateJWT создаёт JWT токен
 func GenerateJWT(userID int, username string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":  userID,
 		"username": username,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Токен на 24 часа
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 		"iat":      time.Now().Unix(),
 	}
 
@@ -35,7 +32,6 @@ func GenerateJWT(userID int, username string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-// ValidateJWT проверяет JWT токен
 func ValidateJWT(tokenString string) (*jwt.Token, error) {
 	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -45,7 +41,6 @@ func ValidateJWT(tokenString string) (*jwt.Token, error) {
 	})
 }
 
-// GetUserIDFromToken получает user_id из токена
 func GetUserIDFromToken(tokenString string) (int, error) {
 	token, err := ValidateJWT(tokenString)
 	if err != nil {

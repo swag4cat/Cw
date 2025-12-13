@@ -24,7 +24,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Структуры данных
 type User struct {
 	ID        int       `json:"id"`
 	Username  string    `json:"username"`
@@ -44,7 +43,7 @@ type Recipe struct {
 	ImageBase64  string    `json:"image_base64,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	IsFavorite   bool      `json:"is_favorite"` // ← ДОБАВЬ ЭТУ СТРОКУ
+	IsFavorite   bool      `json:"is_favorite"`
 }
 
 type AuthResponse struct {
@@ -61,7 +60,6 @@ type RecipesResponse struct {
 	Recipes []Recipe `json:"recipes"`
 }
 
-// Эмодзи символы (исправляем проблемные)
 const (
 	iconFood     = "🍳"
 	iconRecipe   = "📋"
@@ -77,12 +75,11 @@ const (
 	iconBullet   = "•"
 	iconRefresh  = "🔄"
 	iconExit     = "🚪"
-	iconEdit     = "✏️" // ДОБАВЬТЕ ЭТУ СТРОКУ
-	iconStarEmpty = "🖤" // ← ДОБАВЬ
-	iconStarFull  = "❤" // ← ДОБАВЬ
+	iconEdit     = "✏️"
+	iconStarEmpty = "🖤"
+	iconStarFull  = "❤"
 )
 
-// Глобальные переменные
 var (
 	myApp           fyne.App
 	myWindow        fyne.Window
@@ -93,8 +90,8 @@ var (
 	filteredRecipes []Recipe
 	statusLabel     *widget.Label
 	searchEntry     *widget.Entry
-	showFavoritesOnly bool = false  // ← ДОБАВИТЬ
-	favoritesBtn     *widget.Button // ← ДОБАВИТЬ
+	showFavoritesOnly bool = false
+	favoritesBtn     *widget.Button
 )
 
 func getAPIURL() string {
@@ -119,11 +116,9 @@ func initUI() {
 	statusLabel = widget.NewLabel(fmt.Sprintf("%s Статус: Не авторизован", iconTime))
 	statusLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-	// Поле поиска
 	searchEntry = widget.NewEntry()
 	searchEntry.SetPlaceHolder(fmt.Sprintf("%s Поиск рецептов...", iconSearch))
 
-	// Создаём Grid для карточек
 	recipeGrid = container.NewGridWrap(fyne.NewSize(250, 200))
 }
 
@@ -134,7 +129,6 @@ func truncateText(text string, maxLength int) string {
 	return text[:maxLength] + "..."
 }
 
-// Функция для обновления Grid
 func updateRecipeGrid() {
 	recipeGrid.Objects = nil
 
@@ -151,30 +145,26 @@ func updateRecipeGrid() {
 	recipeGrid.Refresh()
 }
 
-// Функция создания карточки рецепта
 func createRecipeCard(recipe Recipe) fyne.CanvasObject {
-	// Создаём изображение для карточки
+
 	var imageResource fyne.Resource
 
 	if recipe.ImageBase64 != "" && len(recipe.ImageBase64) > 100 {
-		// Пробуем декодировать base64
+
 		imgData, err := base64.StdEncoding.DecodeString(recipe.ImageBase64)
 		if err == nil {
 			imageResource = fyne.NewStaticResource("recipe_"+strconv.Itoa(recipe.ID), imgData)
 		}
 	}
 
-	// Если нет фото или ошибка декодирования - используем иконку
 	if imageResource == nil {
 		imageResource = theme.FileIcon()
 	}
 
-	// Создаём изображение
 	cardImage := canvas.NewImageFromResource(imageResource)
 	cardImage.FillMode = canvas.ImageFillContain
 	cardImage.SetMinSize(fyne.NewSize(200, 120))
 
-	// Создаём кнопку избранного (звезда)
 	favoriteIcon := iconStarEmpty
 	if recipe.IsFavorite {
 		favoriteIcon = iconStarFull
@@ -185,7 +175,6 @@ func createRecipeCard(recipe Recipe) fyne.CanvasObject {
 	})
 	favoriteBtn.Importance = widget.LowImportance
 
-	// Создаём контейнер карточки с кнопкой избранного
 	cardContent := container.NewVBox(
 		cardImage,
 		widget.NewLabelWithStyle(recipe.Title, fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
@@ -193,12 +182,10 @@ func createRecipeCard(recipe Recipe) fyne.CanvasObject {
 		container.NewCenter(favoriteBtn),
 	)
 
-	// Создаём кнопку (вместо карточки)
 	cardButton := widget.NewButton("", func() {
 		showRecipeDetails(recipe)
 	})
 
-	// Вставляем контент в кнопку
 	cardContainer := container.NewStack(
 		cardButton,
 		cardContent,
@@ -317,7 +304,6 @@ func showMainWindow() {
 		updateRecipeGrid()
 	}
 
-	// Создаём кнопку избранного
 	favoritesBtn = widget.NewButton(fmt.Sprintf("%s Избранное", iconStarEmpty), func() {
 		showFavoritesOnly = !showFavoritesOnly
 
@@ -347,7 +333,6 @@ func showMainWindow() {
 		widget.NewSeparator(),
 	)
 
-	// Используем Grid
 	content := container.NewBorder(
 		topPanel,
 		nil,
@@ -503,15 +488,12 @@ func showAddRecipeFormWithImage() {
 	difficultyEntry := widget.NewSelect([]string{"легкая", "средняя", "сложная"}, nil)
 	difficultyEntry.PlaceHolder = "Выберите сложность"
 
-	// Переменная для изображения
 	var imageBase64 string
 
-	// Превью изображения
 	imagePreview := canvas.NewImageFromResource(theme.BrokenImageIcon())
 	imagePreview.SetMinSize(fyne.NewSize(200, 150))
 	imagePreview.FillMode = canvas.ImageFillContain
 
-	// Функция для загрузки и отображения изображения
 	loadAndDisplayImage := func(filePath string) {
 		fmt.Printf("Загружаем изображение из: %s\n", filePath)
 
@@ -521,16 +503,13 @@ func showAddRecipeFormWithImage() {
 			return
 		}
 
-		// Проверяем размер (максимум 1MB для простоты)
 		if len(imgBytes) > 1024*1024 {
 			dialog.ShowError(fmt.Errorf("Изображение слишком большое (макс. 1MB)"), dialogWindow)
 			return
 		}
 
-		// Конвертируем в base64
 		imageBase64 = base64.StdEncoding.EncodeToString(imgBytes)
 
-		// Показываем превью
 		previewResource := fyne.NewStaticResource(
 			filepath.Base(filePath),
 			imgBytes,
@@ -541,7 +520,6 @@ func showAddRecipeFormWithImage() {
 		dialog.ShowInformation("✅", "Фото загружено!", dialogWindow)
 	}
 
-	// Кнопка выбора файла
 	selectImageBtn := widget.NewButton("📁 Выбрать фото", func() {
 		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil || reader == nil {
@@ -555,7 +533,6 @@ func showAddRecipeFormWithImage() {
 			uri := reader.URI()
 			fmt.Printf("Выбранный URI: %s\n", uri.String())
 
-			// Преобразуем URI в путь файла
 			filePath := ""
 			if uri.Scheme() == "file" {
 				filePath = uri.Path()
@@ -571,14 +548,12 @@ func showAddRecipeFormWithImage() {
 			loadAndDisplayImage(filePath)
 		}, dialogWindow)
 
-		// Фильтруем только изображения
 		fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}))
 
 
 		fileDialog.Show()
 	})
 
-	// Удалить фото
 	removeImageBtn := widget.NewButton("🗑 Удалить фото", func() {
 		imageBase64 = ""
 		imagePreview.Resource = theme.BrokenImageIcon()
@@ -605,7 +580,6 @@ func showAddRecipeFormWithImage() {
 	)
 
 	form.OnSubmit = func() {
-		// Валидация
 		if titleEntry.Text == "" {
 			dialog.ShowError(fmt.Errorf("Введите название рецепта"), dialogWindow)
 			return
@@ -650,7 +624,7 @@ func showEditRecipeForm(recipe Recipe) {
     dialogWindow.Resize(fyne.NewSize(500, 700))
 
     titleEntry := widget.NewEntry()
-    titleEntry.SetText(recipe.Title) // Предзаполняем текущим значением
+    titleEntry.SetText(recipe.Title)
 
     descEntry := widget.NewMultiLineEntry()
     descEntry.SetText(recipe.Description)
@@ -668,20 +642,16 @@ func showEditRecipeForm(recipe Recipe) {
     timeEntry.SetText(strconv.Itoa(recipe.CookingTime))
 
     difficultyEntry := widget.NewSelect([]string{"легкая", "средняя", "сложная"}, func(selected string) {
-        // Обработчик выбора
     })
-    difficultyEntry.Selected = recipe.Difficulty // Устанавливаем текущее значение
+    difficultyEntry.Selected = recipe.Difficulty
     difficultyEntry.PlaceHolder = "Выберите сложность"
 
-    // Переменная для изображения
-    var imageBase64 string = recipe.ImageBase64 // Начинаем с текущего изображения
+    var imageBase64 string = recipe.ImageBase64
 
-    // Превью изображения
     imagePreview := canvas.NewImageFromResource(theme.BrokenImageIcon())
     imagePreview.SetMinSize(fyne.NewSize(200, 150))
     imagePreview.FillMode = canvas.ImageFillContain
 
-    // Если есть текущее изображение - показываем его
     if recipe.ImageBase64 != "" && len(recipe.ImageBase64) > 100 {
         imgData, err := base64.StdEncoding.DecodeString(recipe.ImageBase64)
         if err == nil {
@@ -691,7 +661,6 @@ func showEditRecipeForm(recipe Recipe) {
         }
     }
 
-    // Функция для загрузки и отображения изображения
     loadAndDisplayImage := func(filePath string) {
         fmt.Printf("Загружаем новое изображение из: %s\n", filePath)
 
@@ -706,10 +675,8 @@ func showEditRecipeForm(recipe Recipe) {
             return
         }
 
-        // Конвертируем в base64
         imageBase64 = base64.StdEncoding.EncodeToString(imgBytes)
 
-        // Показываем превью
         previewResource := fyne.NewStaticResource(
             filepath.Base(filePath),
             imgBytes,
@@ -720,7 +687,6 @@ func showEditRecipeForm(recipe Recipe) {
         dialog.ShowInformation("✅", "Новое фото загружено!", dialogWindow)
     }
 
-    // Кнопка выбора файла
     selectImageBtn := widget.NewButton("📁 Выбрать новое фото", func() {
         fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
             if err != nil || reader == nil {
@@ -754,7 +720,6 @@ func showEditRecipeForm(recipe Recipe) {
         fileDialog.Show()
     })
 
-    // Удалить фото
     removeImageBtn := widget.NewButton("🗑 Удалить фото", func() {
         imageBase64 = ""
         imagePreview.Resource = theme.BrokenImageIcon()
@@ -782,7 +747,6 @@ func showEditRecipeForm(recipe Recipe) {
     )
 
     form.OnSubmit = func() {
-        // Валидация
         if titleEntry.Text == "" {
             dialog.ShowError(fmt.Errorf("Введите название рецепта"), dialogWindow)
             return
@@ -793,7 +757,7 @@ func showEditRecipeForm(recipe Recipe) {
         }
 
         updateRecipeWithImage(
-            recipe.ID, // Передаем ID редактируемого рецепта
+            recipe.ID,
             titleEntry.Text,
             descEntry.Text,
             parseIngredients(ingredientsEntry.Text),
@@ -889,7 +853,7 @@ func updateRecipeWithImage(recipeID int, title, description string, ingredients 
     }
 
     recipeData := map[string]interface{}{
-        "id":           recipeID, // Ключевое поле для идентификации
+        "id":           recipeID,
         "title":        title,
         "description":  description,
         "ingredients":  ingredients,
@@ -902,7 +866,7 @@ func updateRecipeWithImage(recipeID int, title, description string, ingredients 
     jsonData, _ := json.Marshal(recipeData)
 
     client := &http.Client{}
-    // Используем PUT запрос и endpoint /api/update-recipe
+
     req, _ := http.NewRequest("PUT", getAPIURL()+"/update-recipe", bytes.NewBuffer(jsonData))
     req.Header.Set("Content-Type", "application/json")
     req.Header.Set("Authorization", "Bearer "+currentToken)
@@ -920,9 +884,8 @@ func updateRecipeWithImage(recipeID int, title, description string, ingredients 
     if resp.StatusCode == 200 {
         dialog.ShowInformation(fmt.Sprintf("%s Успех", iconSuccess),
             "Рецепт успешно обновлен!", myWindow)
-        loadRecipes() // Перезагружаем список рецептов
+        loadRecipes()
     } else {
-        // Парсим сообщение об ошибке
         var errorResp map[string]interface{}
         if err := json.Unmarshal(body, &errorResp); err == nil {
             if msg, ok := errorResp["error"].(string); ok {
@@ -947,7 +910,6 @@ func showRecipeDetails(recipe Recipe) {
             Italic: true,
         })
 
-    // Показываем фото если есть
     var imageContainer fyne.CanvasObject
 
     if recipe.ImageBase64 != "" && len(recipe.ImageBase64) > 100 {
@@ -965,7 +927,6 @@ func showRecipeDetails(recipe Recipe) {
         imageContainer = widget.NewLabel("📷 Фото не загружено")
     }
 
-    // 1. БЛОК С ОПИСАНИЕМ (ДОБАВЛЕНО)
     var descriptionBox fyne.CanvasObject
     if recipe.Description != "" {
         descriptionLabel := widget.NewLabel(recipe.Description)
@@ -991,7 +952,6 @@ func showRecipeDetails(recipe Recipe) {
         difficultyIcon = "♨️"
     }
 
-    // 2. ИНФОРМАЦИОННАЯ КАРТОЧКА
     infoCard := container.NewVBox(
         widget.NewLabelWithStyle(fmt.Sprintf("%s Информация о рецепте", iconFood),
             fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -1001,7 +961,6 @@ func showRecipeDetails(recipe Recipe) {
         widget.NewLabel(fmt.Sprintf("%s Добавлен: %s", iconCalendar, recipe.CreatedAt.Format("02.01.2006 15:04"))),
     )
 
-    // 3. ИНГРЕДИЕНТЫ
     ingredientsBox := container.NewVBox(
         widget.NewLabelWithStyle(fmt.Sprintf("%s Ингредиенты", iconAdd),
             fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -1011,7 +970,6 @@ func showRecipeDetails(recipe Recipe) {
         ingredientsBox.Add(widget.NewLabel(fmt.Sprintf("%s %s", iconBullet, ing)))
     }
 
-    // 4. ИНСТРУКЦИИ С ПРОКРУТКОЙ (УЛУЧШЕННАЯ ВЕРСИЯ)
     instructionsTitle := widget.NewLabelWithStyle(fmt.Sprintf("%s Приготовление", iconFood),
         fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
@@ -1030,10 +988,9 @@ func showRecipeDetails(recipe Recipe) {
         instructionsBox.(*container.Scroll).SetMinSize(fyne.NewSize(0, 200))
     }
 
-    // Добавляем кнопки редактирования и удаления
     editBtn := widget.NewButton(fmt.Sprintf("%s Редактировать", iconEdit), func() {
 	    dialogWindow.Close()
-	    showEditRecipeForm(recipe) // Эту функцию создадим на следующем шаге
+	    showEditRecipeForm(recipe)
     })
 
     deleteBtn := widget.NewButton(fmt.Sprintf("%s Удалить", iconDelete), func() {
@@ -1053,11 +1010,10 @@ func showRecipeDetails(recipe Recipe) {
         dialogWindow.Close()
     })
 
-    // 5. СОБИРАЕМ ВСЕ БЛОКИ ВМЕСТЕ
     content := container.NewVBox(
         titleLabel,
         container.NewCenter(imageContainer),
-        descriptionBox,     // ← ОПИСАНИЕ ДОБАВЛЕНО ЗДЕСЬ
+        descriptionBox,
         infoCard,
         ingredientsBox,
         instructionsBox,
@@ -1180,7 +1136,6 @@ func toggleFavorite(recipeID int, addToFavorites bool) {
     defer resp.Body.Close()
 
     if resp.StatusCode == 200 {
-        // Обновляем локальный список рецептов
         if showFavoritesOnly {
             showOnlyFavorites()
         } else {
