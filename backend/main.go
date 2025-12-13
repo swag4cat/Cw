@@ -21,6 +21,7 @@ import (
 var db *pgx.Conn
 var userRepo *repository.UserRepository
 var recipeRepo *repository.RecipeRepository
+var favoriteRepo *repository.FavoriteRepository
 
 func initDB() error {
 	connStr := fmt.Sprintf(
@@ -49,6 +50,7 @@ func initDB() error {
 	// Инициализируем репозитории
 	userRepo = repository.NewUserRepository(db)
 	recipeRepo = repository.NewRecipeRepository(db)
+	favoriteRepo = repository.NewFavoriteRepository(db)
 
 	log.Println("✅ Подключение к PostgreSQL установлено")
 	return nil
@@ -518,6 +520,136 @@ func deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func favoritesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, `{"error": "Метод не разрешен"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Получаем user_id из токена
+	authHeader := r.Header.Get("Authorization")
+	tokenString := strings.Split(authHeader, " ")[1]
+	userID, err := auth.GetUserIDFromToken(tokenString)
+	if err != nil {
+		http.Error(w, `{"error": "Невалидный токен"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Получаем ID избранных рецептов
+	favoriteIDs, err := favoriteRepo.GetFavoriteRecipes(userID)
+	if err != nil {
+		http.Error(w, `{"error": "Ошибка при получении избранного"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Получаем сами рецепты
+	var favoriteRecipes []models.Recipe
+	for _, recipeID := range favoriteIDs {
+		recipe, err := recipeRepo.GetRecipeByID(recipeID)
+		if err == nil {
+			recipe.IsFavorite = true // Помечаем как избранное
+			favoriteRecipes = append(favoriteRecipes, *recipe)
+		}
+	}
+
+	response := map[string]interface{}{
+		"status":   "ok",
+		"count":    len(favoriteRecipes),
+		"recipes":  favoriteRecipes,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func addFavoriteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, `{"error": "Метод не разрешен"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Получаем user_id из токена
+	authHeader := r.Header.Get("Authorization")
+	tokenString := strings.Split(authHeader, " ")[1]
+	userID, err := auth.GetUserIDFromToken(tokenString)
+	if err != nil {
+		http.Error(w, `{"error": "Невалидный токен"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		RecipeID int `json:"recipe_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Неверный формат данных"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Проверяем, существует ли рецепт
+	_, err = recipeRepo.GetRecipeByID(req.RecipeID)
+	if err != nil {
+		http.Error(w, `{"error": "Рецепт не найден"}`, http.StatusNotFound)
+		return
+	}
+
+	// Добавляем в избранное
+	if err := favoriteRepo.AddFavorite(userID, req.RecipeID); err != nil {
+		http.Error(w, `{"error": "Ошибка при добавлении в избранное"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":  "ok",
+		"message": "Рецепт добавлен в избранное",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func removeFavoriteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(w, `{"error": "Метод не разрешен"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Получаем user_id из токена
+	authHeader := r.Header.Get("Authorization")
+	tokenString := strings.Split(authHeader, " ")[1]
+	userID, err := auth.GetUserIDFromToken(tokenString)
+	if err != nil {
+		http.Error(w, `{"error": "Невалидный токен"}`, http.StatusUnauthorized)
+		return
+	}
+
+	recipeIDStr := r.URL.Query().Get("recipe_id")
+	if recipeIDStr == "" {
+		http.Error(w, `{"error": "ID рецепта не указан"}`, http.StatusBadRequest)
+		return
+	}
+
+	recipeID, err := strconv.Atoi(recipeIDStr)
+	if err != nil {
+		http.Error(w, `{"error": "Неверный ID рецепта"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Удаляем из избранного
+	if err := favoriteRepo.RemoveFavorite(userID, recipeID); err != nil {
+		http.Error(w, `{"error": "Ошибка при удалении из избранного"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":  "ok",
+		"message": "Рецепт удален из избранного",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 func main() {
 	// Настройка логов
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -546,6 +678,9 @@ func main() {
 	http.HandleFunc("/api/create-recipe", authMiddleware(createRecipeHandler))
 	http.HandleFunc("/api/update-recipe", authMiddleware(updateRecipeHandler))
 	http.HandleFunc("/api/delete-recipe", authMiddleware(deleteRecipeHandler))
+	http.HandleFunc("/api/favorites", authMiddleware(favoritesHandler))
+	http.HandleFunc("/api/favorites/add", authMiddleware(addFavoriteHandler))
+	http.HandleFunc("/api/favorites/remove", authMiddleware(removeFavoriteHandler))
 
 	// Корневой маршрут
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -553,7 +688,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"app":        "Кулинарная книга",
 			"version":    "1.0.0",
-			"author":     "Студент",
+			"author":     "Кондратов Семён",
 			"status":     "работает",
 			"database":   "PostgreSQL",
 			"container":  "Docker",

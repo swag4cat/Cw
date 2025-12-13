@@ -53,6 +53,19 @@ func (r *RecipeRepository) CreateRecipe(recipe *models.Recipe) error {
 func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, error) {
 	ctx := context.Background()
 
+	// Сначала получаем избранные рецепты пользователя
+	favoriteRepo := NewFavoriteRepository(r.db)
+	favoriteIDs, err := favoriteRepo.GetFavoriteRecipes(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Создаём map для быстрой проверки
+	favoriteMap := make(map[int]bool)
+	for _, id := range favoriteIDs {
+		favoriteMap[id] = true
+	}
+
 	query := `
 		SELECT id, user_id, title, description, ingredients, instructions,
 		       cooking_time, difficulty, image_base64, created_at, updated_at
@@ -81,7 +94,7 @@ func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, erro
 			&recipe.Instructions,
 			&recipe.CookingTime,
 			&recipe.Difficulty,
-			&recipe.ImageBase64, // ДОБАВИЛИ
+			&recipe.ImageBase64,
 			&recipe.CreatedAt,
 			&recipe.UpdatedAt,
 		)
@@ -91,6 +104,10 @@ func (r *RecipeRepository) GetRecipesByUserID(userID int) ([]models.Recipe, erro
 		}
 
 		json.Unmarshal(ingredientsJSON, &recipe.Ingredients)
+
+		// Устанавливаем флаг избранного
+		recipe.IsFavorite = favoriteMap[recipe.ID]
+
 		recipes = append(recipes, recipe)
 	}
 

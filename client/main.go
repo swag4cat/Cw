@@ -44,6 +44,7 @@ type Recipe struct {
 	ImageBase64  string    `json:"image_base64,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	IsFavorite   bool      `json:"is_favorite"` // ← ДОБАВЬ ЭТУ СТРОКУ
 }
 
 type AuthResponse struct {
@@ -77,6 +78,8 @@ const (
 	iconRefresh  = "🔄"
 	iconExit     = "🚪"
 	iconEdit     = "✏️" // ДОБАВЬТЕ ЭТУ СТРОКУ
+	iconStarEmpty = "🖤" // ← ДОБАВЬ
+	iconStarFull  = "❤" // ← ДОБАВЬ
 )
 
 // Глобальные переменные
@@ -90,6 +93,8 @@ var (
 	filteredRecipes []Recipe
 	statusLabel     *widget.Label
 	searchEntry     *widget.Entry
+	showFavoritesOnly bool = false  // ← ДОБАВИТЬ
+	favoritesBtn     *widget.Button // ← ДОБАВИТЬ
 )
 
 func getAPIURL() string {
@@ -101,7 +106,7 @@ func getAPIURL() string {
 
 func main() {
 	myApp = app.New()
-	myWindow = myApp.NewWindow(fmt.Sprintf("%s Кулинарная книга v1.0", iconFood))
+	myWindow = myApp.NewWindow(fmt.Sprintf("%s Кулинарная книга KonKi", iconFood))
 	myWindow.Resize(fyne.NewSize(900, 700))
 
 	initUI()
@@ -169,11 +174,23 @@ func createRecipeCard(recipe Recipe) fyne.CanvasObject {
 	cardImage.FillMode = canvas.ImageFillContain
 	cardImage.SetMinSize(fyne.NewSize(200, 120))
 
-	// Создаём контейнер карточки
+	// Создаём кнопку избранного (звезда)
+	favoriteIcon := iconStarEmpty
+	if recipe.IsFavorite {
+		favoriteIcon = iconStarFull
+	}
+
+	favoriteBtn := widget.NewButton(favoriteIcon, func() {
+		toggleFavorite(recipe.ID, !recipe.IsFavorite)
+	})
+	favoriteBtn.Importance = widget.LowImportance
+
+	// Создаём контейнер карточки с кнопкой избранного
 	cardContent := container.NewVBox(
 		cardImage,
 		widget.NewLabelWithStyle(recipe.Title, fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		widget.NewLabel(fmt.Sprintf("%s %d мин | %s", iconTime, recipe.CookingTime, recipe.Difficulty)),
+		container.NewCenter(favoriteBtn),
 	)
 
 	// Создаём кнопку (вместо карточки)
@@ -300,6 +317,19 @@ func showMainWindow() {
 		updateRecipeGrid()
 	}
 
+	// Создаём кнопку избранного
+	favoritesBtn = widget.NewButton(fmt.Sprintf("%s Избранное", iconStarEmpty), func() {
+		showFavoritesOnly = !showFavoritesOnly
+
+		if showFavoritesOnly {
+			favoritesBtn.SetText(fmt.Sprintf("%s Избранное", iconStarFull))
+			showOnlyFavorites()
+		} else {
+			favoritesBtn.SetText(fmt.Sprintf("%s Избранное", iconStarEmpty))
+			loadRecipes()
+		}
+	})
+
 	topPanel := container.NewVBox(
 		container.NewHBox(
 			statusLabel,
@@ -313,7 +343,7 @@ func showMainWindow() {
 			nil,
 			searchEntry,
 		),
-		container.NewHBox(refreshBtn, addBtn, logoutBtn),
+		container.NewHBox(refreshBtn, addBtn, favoritesBtn, logoutBtn),
 		widget.NewSeparator(),
 	)
 
@@ -954,11 +984,11 @@ func showRecipeDetails(recipe Recipe) {
     difficultyIcon := "📊"
     switch recipe.Difficulty {
     case "легкая":
-        difficultyIcon = "🟢"
+        difficultyIcon = "✨"
     case "средняя":
-        difficultyIcon = "🟡"
+        difficultyIcon = "🔥"
     case "сложная":
-        difficultyIcon = "🔴"
+        difficultyIcon = "♨️"
     }
 
     // 2. ИНФОРМАЦИОННАЯ КАРТОЧКА
@@ -1069,4 +1099,95 @@ func deleteRecipe(recipeID int) {
 		dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, string(body)), myWindow)
 		statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
 	}
+}
+
+func showOnlyFavorites() {
+    if currentToken == "" {
+        return
+    }
+
+    statusLabel.SetText(fmt.Sprintf("%s Статус: Загрузка избранного...", iconTime))
+
+    client := &http.Client{}
+    req, _ := http.NewRequest("GET", getAPIURL()+"/favorites", nil)
+    req.Header.Set("Authorization", "Bearer "+currentToken)
+
+    resp, err := client.Do(req)
+    if err != nil {
+        dialog.ShowError(fmt.Errorf("%s Ошибка загрузки избранного: %v", iconError, err), myWindow)
+        statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка загрузки", iconError))
+        return
+    }
+    defer resp.Body.Close()
+
+    body, _ := io.ReadAll(resp.Body)
+
+    if resp.StatusCode != 200 {
+        dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, string(body)), myWindow)
+        statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
+        return
+    }
+
+    var favoritesResp RecipesResponse
+    json.Unmarshal(body, &favoritesResp)
+
+    if favoritesResp.Status == "ok" {
+        recipes = favoritesResp.Recipes
+        filteredRecipes = recipes
+        updateRecipeGrid()
+        statusLabel.SetText(fmt.Sprintf("%s Статус: %d избранных рецептов",
+            iconSuccess, len(recipes)))
+    } else {
+        dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, favoritesResp.Message), myWindow)
+        statusLabel.SetText(fmt.Sprintf("%s Статус: Ошибка", iconError))
+    }
+}
+
+func toggleFavorite(recipeID int, addToFavorites bool) {
+    if currentToken == "" {
+        return
+    }
+
+    var url string
+    var method string
+
+    if addToFavorites {
+        url = getAPIURL() + "/favorites/add"
+        method = "POST"
+    } else {
+        url = fmt.Sprintf("%s/favorites/remove?recipe_id=%d", getAPIURL(), recipeID)
+        method = "DELETE"
+    }
+
+    client := &http.Client{}
+    var req *http.Request
+
+    if addToFavorites {
+        data, _ := json.Marshal(map[string]int{"recipe_id": recipeID})
+        req, _ = http.NewRequest(method, url, bytes.NewBuffer(data))
+        req.Header.Set("Content-Type", "application/json")
+    } else {
+        req, _ = http.NewRequest(method, url, nil)
+    }
+
+    req.Header.Set("Authorization", "Bearer "+currentToken)
+
+    resp, err := client.Do(req)
+    if err != nil {
+        dialog.ShowError(fmt.Errorf("%s Ошибка: %v", iconError, err), myWindow)
+        return
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode == 200 {
+        // Обновляем локальный список рецептов
+        if showFavoritesOnly {
+            showOnlyFavorites()
+        } else {
+            loadRecipes()
+        }
+    } else {
+        body, _ := io.ReadAll(resp.Body)
+        dialog.ShowError(fmt.Errorf("%s Ошибка: %s", iconError, string(body)), myWindow)
+    }
 }

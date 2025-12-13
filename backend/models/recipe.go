@@ -16,6 +16,7 @@ type Recipe struct {
 	ImageBase64  string                 `json:"image_base64,omitempty"` // ДОБАВИЛИ
 	CreatedAt    time.Time              `json:"created_at"`
 	UpdatedAt    time.Time              `json:"updated_at"`
+	IsFavorite   bool                   `json:"is_favorite"` // ← ДОБАВИЛИ
 	Extra        map[string]interface{} `json:"-"`
 }
 
