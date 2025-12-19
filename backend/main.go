@@ -149,6 +149,11 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Username) > 50 {
+		http.Error(w, `{"error": "Имя пользователя слишком длинное (макс. 50 символов)"}`, http.StatusBadRequest)
+		return
+	}
+
 	exists, err := userRepo.UsernameExists(req.Username)
 	if err != nil {
 		http.Error(w, `{"error": "Ошибка сервера"}`, http.StatusInternalServerError)

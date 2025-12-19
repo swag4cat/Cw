@@ -800,11 +800,32 @@ func parseIngredients(text string) []string {
 }
 
 func createRecipeWithImage(title, description string, ingredients []string, instructions, timeStr, difficulty, imageBase64 string) {
+
 	statusLabel.SetText(fmt.Sprintf("%s Статус: Создание рецепта...", iconTime))
 
 	cookingTime := 0
-	if n, err := strconv.Atoi(timeStr); err == nil {
-		cookingTime = n
+	if timeStr != "" {
+		if n, err := strconv.Atoi(timeStr); err == nil {
+			cookingTime = n
+		}
+	}
+
+	if cookingTime < 0 {
+		dialog.ShowError(fmt.Errorf("%s Время приготовления не может быть отрицательным", iconError), myWindow)
+		return
+	}
+	if cookingTime > 1440 {
+		dialog.ShowError(fmt.Errorf("%s Время слишком большое (макс. 24 часа)", iconError), myWindow)
+		return
+	}
+
+	if title == "" {
+		dialog.ShowError(fmt.Errorf("%s Введите название рецепта", iconError), myWindow)
+		return
+	}
+	if len(title) > 20 {
+		dialog.ShowError(fmt.Errorf("%s Название слишком длинное (макс. 20 символов)", iconError), myWindow)
+		return
 	}
 
 	recipeData := map[string]interface{}{
@@ -845,6 +866,7 @@ func createRecipeWithImage(title, description string, ingredients []string, inst
 }
 
 func updateRecipeWithImage(recipeID int, title, description string, ingredients []string, instructions, timeStr, difficulty, imageBase64 string) {
+
     statusLabel.SetText(fmt.Sprintf("%s Статус: Обновление рецепта...", iconTime))
 
     cookingTime := 0
